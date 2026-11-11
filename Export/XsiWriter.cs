@@ -29,10 +29,14 @@ public static class XsiWriter
     private static Matrix4x4 Invert(Matrix4x4 m) =>
         Matrix4x4.Invert(m, out var r) ? r : throw new InvalidOperationException("Singular matrix.");
 
-    /// <summary>Ghoul2 model-space matrix to XSI space: rigid(C^-1 * T(0,0,24) * G * C) in column-vector form.</summary>
-    private static Matrix4x4 ToXsi(Matrix4x4 g)
+    /// <summary>
+    /// Ghoul2 model-space matrix to XSI space: rigid(C^-1 * T(0,0,24) * G * C) in column-vector form for animated
+    /// frames; the base pose omits the T(0,0,24) origin lift, as the plugin's exporter does.
+    /// </summary>
+    private static Matrix4x4 ToXsi(Matrix4x4 g, bool lift = true)
     {
-        var m = CRow * g * LiftRow * CInvRow; // row-vector order = reverse of the column-vector product
+        // Row-vector order = reverse of the column-vector product. The base pose stays at 0 (no lift).
+        var m = lift ? CRow * g * LiftRow * CInvRow : CRow * g * CInvRow;
         var q = Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(OrthoRotation(m)));
         var r = Matrix4x4.CreateFromQuaternion(q);
         r.Translation = m.Translation;
@@ -61,24 +65,26 @@ public static class XsiWriter
 
     public static string Build(GlaFile gla, AnimDef anim, string sceneName)
     {
+        if (anim.Length < 1)
+            throw new XsiExportException($"Animation '{anim.Name}' has no frames (length {anim.Length}).");
         if (anim.Start + anim.Length > gla.NumFrames)
             throw new XsiExportException($"Animation frames exceed the GLA ({gla.NumFrames} frames).");
 
-        int n = Math.Max(anim.Length, 1);
+        int n = anim.Length;
         int nb = gla.Bones.Count;
         float fps = MathF.Abs(anim.Fps);
         if (fps < 0.01f) fps = 20f;
 
         // World matrices in XSI space per frame and at rest.
-        var rest = gla.RestModelSpace().Select(ToXsi).ToArray();
+        var rest = gla.RestModelSpace().Select(g => ToXsi(g, lift: false)).ToArray();
         var frames = new Matrix4x4[n][];
         for (int f = 0; f < n; f++)
-            frames[f] = gla.ModelSpace(new FrameSource(f, anim.Length, anim.Start)).Select(ToXsi).ToArray();
+            frames[f] = gla.ModelSpace(new FrameSource(f, anim.Length, anim.Start)).Select(g => ToXsi(g)).ToArray();
 
         Matrix4x4 Local(Matrix4x4[] w, int b)
         {
             int p = gla.Bones[b].Parent;
-            return p < 0 ? w[b] : w[b] * Invert(w[p]); // row-vector: local = world * parentWorld^-1
+            return p < 0 || p >= nb ? w[b] : w[b] * Invert(w[p]); // row-vector: local = world * parentWorld^-1
         }
 
         // Local keys per bone, with euler angles kept continuous from frame to frame.
