@@ -80,4 +80,75 @@ public class AnimComparerTests
         var r = Cmp(Gla(0, 0, 0, 0), Gla(0, 0, 30, 0));
         Assert.Equal(2, r.Bones[0].AngleFrame);
     }
+
+    private static GlaFile Gla2(float[] rootDegs, Vector3[] childT, float[] childDegs)
+    {
+        var frames = new (Quaternion, Vector3)[rootDegs.Length, 2];
+        for (int i = 0; i < rootDegs.Length; i++)
+        {
+            frames[i, 0] = F(rootDegs[i]);
+            frames[i, 1] = (Rot(childDegs[i]), childT[i]);
+        }
+        return GlaFile.Parse(TestGla.Build(new[] { "root", "child" }, new[] { -1, 0 },
+            new[] { Matrix4x4.Identity, Matrix4x4.Identity }, frames));
+    }
+
+    [Fact]
+    public void Mean_angle_is_exact()
+    {
+        var r = Cmp(Gla(0, 0, 0, 0), Gla(0, 0, 30, 0));
+        Assert.InRange(r.MeanAngleDeg, 7.45f, 7.55f);
+    }
+
+    [Fact]
+    public void Large_peak_with_low_mean_is_minor()
+    {
+        var r = Cmp(Gla(0, 0, 0, 0, 0, 0, 0, 0, 0, 0), Gla(0, 0, 0, 0, 0, 0, 0, 0, 0, 90));
+        Assert.Equal(Classification.Minor, r.Class);
+        Assert.InRange(r.Bones[0].MaxAngleDeg, 89f, 91f);
+    }
+
+    private static GlaFile GlaT(params Vector3[] t)
+    {
+        var frames = new (Quaternion, Vector3)[t.Length, 1];
+        for (int i = 0; i < t.Length; i++) frames[i, 0] = (Quaternion.Identity, t[i]);
+        return GlaFile.Parse(TestGla.Build(new[] { "root" }, new[] { -1 }, new[] { Matrix4x4.Identity }, frames));
+    }
+
+    [Fact]
+    public void Offset_above_tolerance_is_reported()
+    {
+        var r = Cmp(GlaT(Vector3.Zero, Vector3.Zero, Vector3.Zero), GlaT(Vector3.Zero, new Vector3(0, 0, 1), Vector3.Zero));
+        Assert.NotEqual(Classification.Identical, r.Class);
+        Assert.InRange(r.Bones[0].MaxOffset, 0.95f, 1.05f);
+        Assert.Equal(1, r.Bones[0].OffsetFrame);
+    }
+
+    [Fact]
+    public void Offset_below_tolerance_is_identical() =>
+        Assert.Equal(Classification.Identical, Cmp(GlaT(Vector3.Zero, Vector3.Zero), GlaT(new Vector3(0.02f, 0, 0), new Vector3(0.02f, 0, 0))).Class);
+
+    [Fact]
+    public void Bones_are_sorted_by_angle_descending_and_filtered()
+    {
+        // root: 0 vs 3 deg; child (identity base, model = skin product): child delta 10 deg extra.
+        var a = Gla2(new float[] { 0, 0 }, new[] { Vector3.Zero, Vector3.Zero }, new float[] { 0, 0 });
+        var b = Gla2(new float[] { 3, 3 }, new[] { Vector3.Zero, Vector3.Zero }, new float[] { 10, 10 });
+        var r = Cmp(a, b);
+        Assert.Equal(2, r.Bones.Count);
+        Assert.True(r.Bones[0].MaxAngleDeg >= r.Bones[1].MaxAngleDeg);
+        Assert.Equal("child", r.Bones[0].Bone);
+
+        var c = Gla2(new float[] { 0, 0 }, new[] { Vector3.Zero, Vector3.Zero }, new float[] { 0, 0 });
+        var d = Gla2(new float[] { 0, 0 }, new[] { Vector3.Zero, Vector3.Zero }, new float[] { 5, 5 });
+        var r2 = Cmp(c, d);
+        Assert.Equal(new[] { "child" }, r2.Bones.Select(x => x.Bone));
+    }
+
+    [Fact]
+    public void Zero_length_animation_throws()
+    {
+        var g = Gla(0, 0);
+        Assert.Throws<ArgumentException>(() => AnimComparer.Compare(g, new AnimDef("A", 0, 0, -1, 20f), g, Def(2)));
+    }
 }

@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace SWGLAnimationExtractor;
 
-public enum Classification { Pending, Identical, Minor, Major, Exclusive }
+public enum Classification { Pending, Identical, Minor, Major, Exclusive, Failed }
 
 public record BoneDiff(string Bone, float MaxAngleDeg, int AngleFrame, float MaxOffset, int OffsetFrame);
 
@@ -26,6 +26,8 @@ public static class AnimComparer
 
     public static AnimComparison Compare(GlaFile a, AnimDef da, GlaFile b, AnimDef db)
     {
+        if (da.Length <= 0 || db.Length <= 0)
+            throw new ArgumentException($"Animation '{(da.Length <= 0 ? da.Name : db.Name)}' has no frames.");
         int samples = Math.Max(da.Length, db.Length);
         var common = new List<(int ia, int ib)>();
         var onlyA = new List<string>();
@@ -66,7 +68,8 @@ public static class AnimComparer
         for (int k = 0; k < common.Count; k++)
             if (maxAngle[k] > Thresholds.AngleDeg || maxOff[k] > Thresholds.Offset)
                 bones.Add(new BoneDiff(a.Bones[common[k].ia].Name, maxAngle[k], angleFrame[k], maxOff[k], offFrame[k]));
-        bones.Sort((x, y) => y.MaxAngleDeg.CompareTo(x.MaxAngleDeg));
+        bones = bones.OrderByDescending(x => x.MaxAngleDeg).ThenByDescending(x => x.MaxOffset)
+            .ThenBy(x => x.Bone, StringComparer.Ordinal).ToList();
 
         var cls = da.Length == db.Length && bones.Count == 0 ? Classification.Identical
             : mean >= Thresholds.MajorMeanAngleDeg ? Classification.Major : Classification.Minor;
