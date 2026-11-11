@@ -34,8 +34,9 @@ public partial class Game1
 
     private void LoadInitial(SideState s, string? path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+        if (string.IsNullOrWhiteSpace(path)) return;
         s.Path = path;
+        if (!File.Exists(path)) { s.Error = $"File not found: {path}"; return; }
         TryLoad(s);
     }
 
@@ -52,30 +53,39 @@ public partial class Game1
         catch (GlaLoadException e)
         {
             s.Error = e.Message;
+            s.Path = s.Side?.GlaPath ?? "";
             return false;
         }
     }
 
     private void LoadSide(SideState s)
     {
-        if (!TryLoad(s)) { UpdateComparison(); return; }
+        if (!TryLoad(s)) return;
+        var other = ReferenceEquals(s, _left) ? _right : _left;
         if (ReferenceEquals(s, _left)) _settings.LeftGla = s.Path.Trim(); else _settings.RightGla = s.Path.Trim();
         _settings.Save();
         UpdateComparison();
+        if (other.Selected != null) Select(other, other.Selected);
     }
 
     private void UpdateComparison()
     {
         if (_left.Side != null && _right.Side != null) _comparison.Start(_left.Side, _right.Side);
         else _comparison.Clear();
-        // A reload can remove the animation that the other side had selected.
-        foreach (var s in new[] { _left, _right })
-            if (s.Selected != null && s.Side?.Find(s.Selected.Name) == null) s.Selected = null;
+    }
+
+    private static void DrawWrapped(Vec4 color, string text)
+    {
+        ImGui.PushTextWrapPos(0f);
+        ImGui.TextColored(color, text);
+        ImGui.PopTextWrapPos();
     }
 
     private void Select(SideState s, AnimDef a)
     {
         var other = ReferenceEquals(s, _left) ? _right : _left;
+        s.Status = null;
+        other.Status = null;
         s.Selected = a;
         other.Selected = other.Side?.Find(a.Name);
     }
@@ -113,7 +123,7 @@ public partial class Game1
                 RunOnUi(() => { s.Path = p; LoadSide(s); });
             });
         }
-        if (s.Error != null) ImGui.TextColored(Red, s.Error);
+        if (s.Error != null) DrawWrapped(Red, s.Error);
 
         if (ImGui.BeginTabBar("tabs"))
         {
@@ -188,6 +198,6 @@ public partial class Game1
             });
         }
         ImGui.EndDisabled();
-        if (s.Status != null) ImGui.TextColored(s.StatusIsError ? Red : Green, s.Status);
+        if (s.Status != null) DrawWrapped(s.StatusIsError ? Red : Green, s.Status);
     }
 }

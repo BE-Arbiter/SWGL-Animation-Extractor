@@ -24,6 +24,7 @@ public partial class Game1 : Game
     }
 
     private readonly ConcurrentQueue<Action> _uiActions = new();
+    private string? _uiError;
 
     /// <summary>Queues work (e.g. from a dialog thread) to run on the UI thread during Update.</summary>
     public void RunOnUi(Action a) => _uiActions.Enqueue(a);
@@ -38,7 +39,7 @@ public partial class Game1 : Game
     {
         while (_uiActions.TryDequeue(out var a))
         {
-            try { a(); } catch (Exception e) { System.Diagnostics.Debug.WriteLine(e); }
+            try { a(); } catch (Exception e) { System.Diagnostics.Debug.WriteLine(e); _uiError = e.Message; }
         }
         base.Update(gameTime);
     }
@@ -72,6 +73,7 @@ public partial class Game1 : Game
             ImGui.TableNextColumn(); DrawSidePanel(_right, _left, "Compared");
             ImGui.EndTable();
         }
+        if (_uiError != null) DrawWrapped(Red, _uiError);
         ImGui.End();
     }
 }

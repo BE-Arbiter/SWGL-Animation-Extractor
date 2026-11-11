@@ -46,9 +46,20 @@ public static class FileDialogs
         Action<string?> done) =>
         Run(() => Show(true, filter, title, initialDir, defaultName, defExt), done);
 
+    private static int _open;
+
     private static void Run(Func<string?> show, Action<string?> done)
     {
-        var t = new Thread(() => done(show()));
+        if (Interlocked.Exchange(ref _open, 1) == 1) return;
+        var t = new Thread(() =>
+        {
+            string? result = null;
+            try { result = show(); }
+            catch (Exception e) { System.Diagnostics.Debug.WriteLine(e); }
+            finally { Volatile.Write(ref _open, 0); }
+            try { done(result); }
+            catch (Exception e) { System.Diagnostics.Debug.WriteLine(e); }
+        });
         t.SetApartmentState(ApartmentState.STA);
         t.IsBackground = true;
         t.Start();
