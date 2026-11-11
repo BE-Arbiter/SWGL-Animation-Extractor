@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SWGLAnimationExtractor.csproj" />
+  <Project Path="tests/SWGLAnimationExtractor.Tests/SWGLAnimationExtractor.Tests.csproj" />
+</Solution>
