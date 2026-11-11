@@ -15,8 +15,12 @@ public static class AnimComparer
     public static FrameSource Sample(AnimDef d, int i, int samples)
     {
         float t = samples == 1 ? 0f : i / (samples - 1f);
-        return new FrameSource(t * (d.Length - 1), d.Length, d.Start);
+        return AtNormalized(d, t);
     }
+
+    /// <summary>Frame at normalized time t in [0,1]: Frame = t * (Length - 1), as used by the comparison.</summary>
+    public static FrameSource AtNormalized(AnimDef d, float t) =>
+        new FrameSource(Math.Clamp(t, 0f, 1f) * Math.Max(d.Length - 1, 0), d.Length, d.Start);
 
     private static Quaternion Rotation(Matrix4x4 m)
     {

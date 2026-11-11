@@ -1,6 +1,7 @@
 using ImGuiNET;
 using Microsoft.Xna.Framework;
 using Vec2 = System.Numerics.Vector2;
+using Vec4 = System.Numerics.Vector4;
 
 namespace SWGLAnimationExtractor;
 
@@ -19,6 +20,8 @@ public partial class Game1
     private string? _glmError;
     private int _centerTab;
     private GlaFile? _fittedFor;
+    private string? _highlightBone; // by name: bone indexes differ between the two GLAs
+    private float _wipe = 0.5f;
 
     private void InitCenter()
     {
@@ -116,7 +119,8 @@ public partial class Game1
                     {
                         case TabReference: DrawAnimView(_refViewer, _left, SkeletonViewer.ReferenceColor); break;
                         case TabCompared: DrawAnimView(_cmpViewer, _right, SkeletonViewer.ComparedColor); break;
-                        default: ImGui.TextDisabled("Not implemented yet."); break; // Task 8
+                        case TabDiffView: DrawDiffView(); break;
+                        case TabDiff3D: DrawDiff3D(); break;
                     }
                 }
                 ImGui.EndChild();
@@ -137,8 +141,119 @@ public partial class Game1
         if (viewer.GlmWarning != null) DrawWrapped(Red, viewer.GlmWarning);
         int w = Math.Max((int)avail.X, 16), h = Math.Max((int)(avail.Y - (viewer.GlmWarning != null ? ImGui.GetTextLineHeightWithSpacing() : 0)), 16);
         FrameSource? frame = anim.Length > 0 ? _playback.Frame(anim) : null;
-        var id = viewer.Render(w, h, s.Side.Gla, frame, color, -1, _showGlm ? _glm : null);
+        var id = viewer.Render(w, h, s.Side.Gla, frame, color, HighlightIndex(s.Side.Gla), _showGlm ? _glm : null);
         CameraInput.Image(id, new Vec2(w, h), viewer.Camera);
+    }
+
+    /// <summary>Index of the highlighted bone in this GLA (bone indexes differ between GLAs), or -1 when absent.</summary>
+    private int HighlightIndex(GlaFile gla) => _highlightBone == null ? -1 : gla.FindBone(_highlightBone);
+
+    private void DrawDiffView()
+    {
+        var a = _left.Selected;
+        var b = _right.Selected;
+        if (a == null || b == null || _left.Side == null || _right.Side == null)
+        {
+            ImGui.TextUnformatted("Select an animation present in both GLAs");
+            return;
+        }
+
+        var avail = ImGui.GetContentRegionAvail();
+        int w = Math.Max((int)avail.X, 16), h = Math.Max((int)avail.Y, 16);
+        var glm = _showGlm ? _glm : null;
+        FrameSource? fa = a.Length > 0 ? _playback.NormalizedFrame(a) : null;
+        FrameSource? fb = b.Length > 0 ? _playback.NormalizedFrame(b) : null;
+        var idA = _refViewer.Render(_camera, w, h, _left.Side.Gla, fa, SkeletonViewer.ReferenceColor, HighlightIndex(_left.Side.Gla), glm);
+        var idB = _cmpViewer.Render(_camera, w, h, _right.Side.Gla, fb, SkeletonViewer.ComparedColor, HighlightIndex(_right.Side.Gla), glm);
+
+        var pos = ImGui.GetCursorScreenPos();
+        var size = new Vec2(w, h);
+        var dl = ImGui.GetWindowDrawList();
+        float split = Math.Clamp(_wipe, 0f, 1f);
+        float x = pos.X + split * w;
+        if (split > 0f) dl.AddImage(idA, pos, new Vec2(x, pos.Y + h), new Vec2(0, 0), new Vec2(split, 1));
+        if (split < 1f) dl.AddImage(idB, new Vec2(x, pos.Y), new Vec2(pos.X + w, pos.Y + h), new Vec2(split, 0), new Vec2(1, 1));
+
+        // The bar's hit zone is submitted before the camera button, so it wins the hover and the drag never orbits.
+        const float grab = 10f;
+        ImGui.SetCursorScreenPos(new Vec2(x - grab / 2, pos.Y));
+        ImGui.InvisibleButton("##wipeBar", new Vec2(grab, h), ImGuiButtonFlags.MouseButtonLeft);
+        bool barActive = ImGui.IsItemActive();
+        if (ImGui.IsItemHovered() || barActive) ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEW);
+        if (barActive)
+        {
+            _wipe = Math.Clamp((ImGui.GetIO().MousePos.X - pos.X) / w, 0f, 1f);
+            x = pos.X + _wipe * w;
+        }
+
+        ImGui.SetCursorScreenPos(pos);
+        ImGui.InvisibleButton("##viewport", size, ImGuiButtonFlags.MouseButtonLeft | ImGuiButtonFlags.MouseButtonRight);
+        CameraInput.Handle(_camera);
+
+        dl.AddRectFilled(new Vec2(x - 1.5f, pos.Y), new Vec2(x + 1.5f, pos.Y + h), 0xFFFFFFFF);
+        uint labelCol = 0xFFFFFFFF;
+        dl.AddText(new Vec2(pos.X + 8, pos.Y + 6), labelCol, "Reference");
+        var cmpSize = ImGui.CalcTextSize("Compared");
+        dl.AddText(new Vec2(pos.X + w - cmpSize.X - 8, pos.Y + 6), labelCol, "Compared");
+    }
+
+    private static readonly Vec4 Orange = new(1.0f, 0.62f, 0.15f, 1f);
+
+    private void DrawDiff3D()
+    {
+        var a = _left.Selected;
+        var b = _right.Selected;
+        if (a == null || b == null || _left.Side == null || _right.Side == null)
+        {
+            ImGui.TextUnformatted("Select an animation present in both GLAs");
+            return;
+        }
+
+        var state = _comparison.Get(a.Name);
+        if (state == Classification.Failed)
+        {
+            DrawWrapped(Red, $"Comparison failed: {_comparison.Error(a.Name)}");
+            return;
+        }
+        var r = _comparison.Result(a.Name);
+        if (r == null) { ImGui.TextUnformatted("Comparing..."); return; }
+
+        ImGui.TextUnformatted($"Reference: {r.FramesA} frames @ {r.FpsA:0.##} fps");
+        ImGui.TextUnformatted($"Compared: {r.FramesB} frames @ {r.FpsB:0.##} fps");
+        if (r.FramesA != r.FramesB) DrawWrapped(Orange, $"Lengths differ: compared over {r.Samples} resampled frames.");
+        if (r.OnlyInA.Count > 0) DrawWrapped(Orange, $"Bones only in Reference: {string.Join(", ", r.OnlyInA)}");
+        if (r.OnlyInB.Count > 0) DrawWrapped(Orange, $"Bones only in Compared: {string.Join(", ", r.OnlyInB)}");
+
+        if (r.Bones.Count == 0) { ImGui.TextUnformatted("No bone differs beyond tolerance."); return; }
+
+        var flags = ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.ScrollY | ImGuiTableFlags.Resizable;
+        if (!ImGui.BeginTable("diffBones", 5, flags, new Vec2(0, ImGui.GetContentRegionAvail().Y))) return;
+        ImGui.TableSetupScrollFreeze(0, 1);
+        ImGui.TableSetupColumn("Bone");
+        ImGui.TableSetupColumn("Max angle (°)");
+        ImGui.TableSetupColumn("Frame");
+        ImGui.TableSetupColumn("Max offset (units)");
+        ImGui.TableSetupColumn("Frame");
+        ImGui.TableHeadersRow();
+        for (int i = 0; i < r.Bones.Count; i++)
+        {
+            var d = r.Bones[i];
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.PushID(i);
+            if (ImGui.Selectable(d.Bone, d.Bone == _highlightBone, ImGuiSelectableFlags.SpanAllColumns))
+            {
+                _highlightBone = d.Bone;
+                _playback.Time01 = d.AngleFrame / (float)Math.Max(r.Samples - 1, 1);
+                _playback.Playing = false;
+            }
+            ImGui.PopID();
+            ImGui.TableNextColumn(); ImGui.TextUnformatted(d.MaxAngleDeg.ToString("0.00"));
+            ImGui.TableNextColumn(); ImGui.TextUnformatted(d.AngleFrame.ToString());
+            ImGui.TableNextColumn(); ImGui.TextUnformatted(d.MaxOffset.ToString("0.00"));
+            ImGui.TableNextColumn(); ImGui.TextUnformatted(d.OffsetFrame.ToString());
+        }
+        ImGui.EndTable();
     }
 
     private void DrawPlaybackControls()

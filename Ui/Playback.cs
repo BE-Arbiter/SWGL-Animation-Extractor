@@ -24,5 +24,8 @@ public sealed class Playback
         return new FrameSource(f, d.Length, d.Start);
     }
 
+    /// <summary>Frame used by the difference tabs: same normalized mapping as <see cref="AnimComparer.Sample"/>.</summary>
+    public FrameSource NormalizedFrame(AnimDef d) => AnimComparer.AtNormalized(d, Time01);
+
     public int FrameIndex(AnimDef d) => Math.Clamp((int)MathF.Floor(Time01 * d.Length), 0, Math.Max(d.Length - 1, 0));
 }
