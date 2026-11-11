@@ -33,6 +33,7 @@ public partial class Game1 : Game
     {
         _imgui = new ImGuiRenderer(this);
         InitSides();
+        InitCenter();
     }
 
     protected override void Update(GameTime gameTime)
@@ -69,7 +70,7 @@ public partial class Game1 : Game
             ImGui.TableSetupColumn("Compared", ImGuiTableColumnFlags.WidthFixed, 300f);
             ImGui.TableNextRow();
             ImGui.TableNextColumn(); DrawSidePanel(_left, _right, "Reference");
-            ImGui.TableNextColumn(); ImGui.TextUnformatted("Center");
+            ImGui.TableNextColumn(); DrawCenter();
             ImGui.TableNextColumn(); DrawSidePanel(_right, _left, "Compared");
             ImGui.EndTable();
         }
