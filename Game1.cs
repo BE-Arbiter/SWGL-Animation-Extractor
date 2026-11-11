@@ -1,10 +1,11 @@
+using System.Collections.Concurrent;
 using ImGuiNET;
 using Microsoft.Xna.Framework;
 using Vec2 = System.Numerics.Vector2;
 
 namespace SWGLAnimationExtractor;
 
-public class Game1 : Game
+public partial class Game1 : Game
 {
     private readonly GraphicsDeviceManager _graphics;
     private ImGuiRenderer _imgui = null!;
@@ -22,7 +23,25 @@ public class Game1 : Game
         Window.Title = "SWGL Animation Extractor";
     }
 
-    protected override void LoadContent() => _imgui = new ImGuiRenderer(this);
+    private readonly ConcurrentQueue<Action> _uiActions = new();
+
+    /// <summary>Queues work (e.g. from a dialog thread) to run on the UI thread during Update.</summary>
+    public void RunOnUi(Action a) => _uiActions.Enqueue(a);
+
+    protected override void LoadContent()
+    {
+        _imgui = new ImGuiRenderer(this);
+        InitSides();
+    }
+
+    protected override void Update(GameTime gameTime)
+    {
+        while (_uiActions.TryDequeue(out var a))
+        {
+            try { a(); } catch (Exception e) { System.Diagnostics.Debug.WriteLine(e); }
+        }
+        base.Update(gameTime);
+    }
 
     protected override void Draw(GameTime gameTime)
     {
@@ -48,9 +67,9 @@ public class Game1 : Game
             ImGui.TableSetupColumn("Center", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn("Compared", ImGuiTableColumnFlags.WidthFixed, 300f);
             ImGui.TableNextRow();
-            ImGui.TableNextColumn(); ImGui.TextUnformatted("Reference");
+            ImGui.TableNextColumn(); DrawSidePanel(_left, _right, "Reference");
             ImGui.TableNextColumn(); ImGui.TextUnformatted("Center");
-            ImGui.TableNextColumn(); ImGui.TextUnformatted("Compared");
+            ImGui.TableNextColumn(); DrawSidePanel(_right, _left, "Compared");
             ImGui.EndTable();
         }
         ImGui.End();
