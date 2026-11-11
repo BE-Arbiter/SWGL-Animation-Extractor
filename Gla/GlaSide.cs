@@ -2,7 +2,7 @@ namespace SWGLAnimationExtractor;
 
 public sealed class GlaLoadException : Exception
 {
-    public GlaLoadException(string message) : base(message) { }
+    public GlaLoadException(string message, Exception? inner = null) : base(message, inner) { }
 }
 
 /// <summary>One side of the comparison: a GLA skeleton plus the animation.cfg next to it.</summary>
@@ -19,7 +19,7 @@ public sealed class GlaSide
         GlaPath = glaPath;
         Gla = gla;
         Anims = anims;
-        _byName = anims.ToDictionary(a => a.Name, a => a, StringComparer.OrdinalIgnoreCase);
+        _byName = anims.ToDictionary(a => a.Name, a => a, StringComparer.Ordinal);
     }
 
     public AnimDef? Find(string name) => _byName.TryGetValue(name, out var a) ? a : null;
@@ -31,12 +31,15 @@ public sealed class GlaSide
             var cfgPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(glaPath)) ?? "", "animation.cfg");
             if (!File.Exists(cfgPath)) throw new GlaLoadException("animation.cfg not found next to the GLA.");
             var gla = GlaFile.Parse(File.ReadAllBytes(glaPath));
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             var anims = AnimationCfg.Parse(File.ReadAllText(cfgPath)).Where(a => seen.Add(a.Name)).ToList();
             return new GlaSide(glaPath, gla, anims);
         }
-        catch (InvalidDataException e) { throw new GlaLoadException(e.Message); }
-        catch (IOException e) { throw new GlaLoadException(e.Message); }
-        catch (UnauthorizedAccessException e) { throw new GlaLoadException(e.Message); }
+        catch (GlaLoadException) { throw; }
+        catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException
+                                  or FormatException or ArgumentException or IndexOutOfRangeException or OverflowException)
+        {
+            throw new GlaLoadException(e.Message, e);
+        }
     }
 }

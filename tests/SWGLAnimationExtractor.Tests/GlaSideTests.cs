@@ -74,4 +74,19 @@ public class GlaSideTests : IDisposable
         }
         finally { CultureInfo.CurrentCulture = old; }
     }
+
+    [Fact]
+    public void Find_is_case_sensitive()
+    {
+        var side = GlaSide.Load(WriteGla("BOTH_STAND1 0 10 -1 20\n"));
+        Assert.Null(side.Find("both_stand1"));
+        Assert.NotNull(side.Find("BOTH_STAND1"));
+    }
+
+    [Fact]
+    public void Names_differing_only_by_case_are_both_kept()
+    {
+        var side = GlaSide.Load(WriteGla("BOTH_STAND1 0 10 -1 20\nboth_stand1 50 5 -1 20\n"));
+        Assert.Equal(2, side.Anims.Count);
+    }
 }
