@@ -22,6 +22,7 @@ public partial class Game1
     private GlaFile? _fittedFor;
     private string? _highlightBone; // by name: bone indexes differ between the two GLAs
     private float _wipe = 0.5f;
+    private bool _draggingBar;
 
     private void InitCenter()
     {
@@ -148,66 +149,69 @@ public partial class Game1
     /// <summary>Index of the highlighted bone in this GLA (bone indexes differ between GLAs), or -1 when absent.</summary>
     private int HighlightIndex(GlaFile gla) => _highlightBone == null ? -1 : gla.FindBone(_highlightBone);
 
+    /// <summary>Shows the standard hint and returns false unless both sides have a selected animation.</summary>
+    private bool RequireBothSelected()
+    {
+        if (_left.Selected != null && _right.Selected != null && _left.Side != null && _right.Side != null) return true;
+        ImGui.TextUnformatted("Select an animation present in both GLAs");
+        return false;
+    }
+
     private void DrawDiffView()
     {
-        var a = _left.Selected;
-        var b = _right.Selected;
-        if (a == null || b == null || _left.Side == null || _right.Side == null)
-        {
-            ImGui.TextUnformatted("Select an animation present in both GLAs");
-            return;
-        }
+        if (!RequireBothSelected()) return;
+        var a = _left.Selected!;
+        var b = _right.Selected!;
 
         var avail = ImGui.GetContentRegionAvail();
         int w = Math.Max((int)avail.X, 16), h = Math.Max((int)avail.Y, 16);
         var glm = _showGlm ? _glm : null;
         FrameSource? fa = a.Length > 0 ? _playback.NormalizedFrame(a) : null;
         FrameSource? fb = b.Length > 0 ? _playback.NormalizedFrame(b) : null;
-        var idA = _refViewer.Render(_camera, w, h, _left.Side.Gla, fa, SkeletonViewer.ReferenceColor, HighlightIndex(_left.Side.Gla), glm);
-        var idB = _cmpViewer.Render(_camera, w, h, _right.Side.Gla, fb, SkeletonViewer.ComparedColor, HighlightIndex(_right.Side.Gla), glm);
+        var idA = _refViewer.Render(_camera, w, h, _left.Side!.Gla, fa, SkeletonViewer.ReferenceColor, HighlightIndex(_left.Side.Gla), glm);
+        var idB = _cmpViewer.Render(_camera, w, h, _right.Side!.Gla, fb, SkeletonViewer.ComparedColor, HighlightIndex(_right.Side.Gla), glm);
 
+        // One button over the whole image. A press within grab px of the bar drags the bar, any other press drives the camera.
+        const float grab = 5f;
         var pos = ImGui.GetCursorScreenPos();
-        var size = new Vec2(w, h);
+        ImGui.InvisibleButton("##viewport", new Vec2(w, h), ImGuiButtonFlags.MouseButtonLeft | ImGuiButtonFlags.MouseButtonRight);
+        float mouseX = ImGui.GetIO().MousePos.X;
+        bool nearBar = Math.Abs(mouseX - (pos.X + Math.Clamp(_wipe, 0f, 1f) * w)) <= grab;
+        if (ImGui.IsItemActivated()) _draggingBar = ImGui.IsMouseDown(ImGuiMouseButton.Left) && nearBar;
+        if (!ImGui.IsItemActive()) _draggingBar = false;
+
+        if (_draggingBar)
+        {
+            _wipe = Math.Clamp((mouseX - pos.X) / w, 0f, 1f);
+            ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEW);
+        }
+        else
+        {
+            if (ImGui.IsItemHovered() && !ImGui.IsItemActive() && nearBar) ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEW);
+            CameraInput.Handle(_camera);
+        }
+
         var dl = ImGui.GetWindowDrawList();
         float split = Math.Clamp(_wipe, 0f, 1f);
         float x = pos.X + split * w;
         if (split > 0f) dl.AddImage(idA, pos, new Vec2(x, pos.Y + h), new Vec2(0, 0), new Vec2(split, 1));
         if (split < 1f) dl.AddImage(idB, new Vec2(x, pos.Y), new Vec2(pos.X + w, pos.Y + h), new Vec2(split, 0), new Vec2(1, 1));
-
-        // The bar's hit zone is submitted before the camera button, so it wins the hover and the drag never orbits.
-        const float grab = 10f;
-        ImGui.SetCursorScreenPos(new Vec2(x - grab / 2, pos.Y));
-        ImGui.InvisibleButton("##wipeBar", new Vec2(grab, h), ImGuiButtonFlags.MouseButtonLeft);
-        bool barActive = ImGui.IsItemActive();
-        if (ImGui.IsItemHovered() || barActive) ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEW);
-        if (barActive)
-        {
-            _wipe = Math.Clamp((ImGui.GetIO().MousePos.X - pos.X) / w, 0f, 1f);
-            x = pos.X + _wipe * w;
-        }
-
-        ImGui.SetCursorScreenPos(pos);
-        ImGui.InvisibleButton("##viewport", size, ImGuiButtonFlags.MouseButtonLeft | ImGuiButtonFlags.MouseButtonRight);
-        CameraInput.Handle(_camera);
-
         dl.AddRectFilled(new Vec2(x - 1.5f, pos.Y), new Vec2(x + 1.5f, pos.Y + h), 0xFFFFFFFF);
-        uint labelCol = 0xFFFFFFFF;
-        dl.AddText(new Vec2(pos.X + 8, pos.Y + 6), labelCol, "Reference");
-        var cmpSize = ImGui.CalcTextSize("Compared");
-        dl.AddText(new Vec2(pos.X + w - cmpSize.X - 8, pos.Y + 6), labelCol, "Compared");
+
+        var refPos = new Vec2(pos.X + 8, pos.Y + 6);
+        var cmpPos = new Vec2(pos.X + w - ImGui.CalcTextSize("Compared").X - 8, pos.Y + 6);
+        dl.AddText(refPos + new Vec2(1, 1), 0xFF000000, "Reference");
+        dl.AddText(refPos, 0xFFFFFFFF, "Reference");
+        dl.AddText(cmpPos + new Vec2(1, 1), 0xFF000000, "Compared");
+        dl.AddText(cmpPos, 0xFFFFFFFF, "Compared");
     }
 
     private static readonly Vec4 Orange = new(1.0f, 0.62f, 0.15f, 1f);
 
     private void DrawDiff3D()
     {
-        var a = _left.Selected;
-        var b = _right.Selected;
-        if (a == null || b == null || _left.Side == null || _right.Side == null)
-        {
-            ImGui.TextUnformatted("Select an animation present in both GLAs");
-            return;
-        }
+        if (!RequireBothSelected()) return;
+        var a = _left.Selected!;
 
         var state = _comparison.Get(a.Name);
         if (state == Classification.Failed)
@@ -256,6 +260,11 @@ public partial class Game1
         ImGui.EndTable();
     }
 
+    /// <summary>Frame index shown in the footer: matches what the active tab renders.</summary>
+    private int FooterFrame(AnimDef anim) => _centerTab is TabDiffView or TabDiff3D
+        ? Math.Clamp((int)MathF.Round(_playback.NormalizedFrame(anim).Frame), 0, anim.Length - 1)
+        : _playback.FrameIndex(anim);
+
     private void DrawPlaybackControls()
     {
         var anim = DisplayedAnim();
@@ -267,7 +276,7 @@ public partial class Game1
         float t = _playback.Time01;
         if (ImGui.SliderFloat("##time", ref t, 0f, 1f, "")) _playback.Time01 = Math.Min(t, 0.99999f);
         ImGui.SameLine();
-        ImGui.TextUnformatted(anim != null && anim.Length > 0 ? $"Frame {_playback.FrameIndex(anim) + 1} / {anim.Length}" : "Frame - / -");
+        ImGui.TextUnformatted(anim != null && anim.Length > 0 ? $"Frame {FooterFrame(anim) + 1} / {anim.Length}" : "Frame - / -");
         ImGui.SameLine();
         ImGui.SetNextItemWidth(120f);
         float speed = _playback.Speed;

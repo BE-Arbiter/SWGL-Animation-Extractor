@@ -31,6 +31,18 @@ public class PlaybackTests
     }
 
     [Fact]
+    public void AtNormalized_maps_time_to_length_minus_one()
+    {
+        var d = new AnimDef("X", 5, 10, 0, 20f);
+        Assert.Equal(0f, AnimComparer.AtNormalized(d, 0f).Frame);
+        Assert.Equal(9f, AnimComparer.AtNormalized(d, 1f).Frame);
+        Assert.Equal(9f, AnimComparer.AtNormalized(d, 2f).Frame);
+        Assert.Equal(0f, AnimComparer.AtNormalized(new AnimDef("Y", 0, 1, 0, 20f), 0.7f).Frame);
+        var f = AnimComparer.AtNormalized(d, 0.5f);
+        Assert.Equal((10, 5), (f.Count, f.First));
+    }
+
+    [Fact]
     public void Frame_is_clamped_to_last()
     {
         var p = new Playback { Time01 = 0.9999f };

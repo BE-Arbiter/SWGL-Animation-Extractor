@@ -48,6 +48,7 @@ public partial class Game1
         {
             s.Side = GlaSide.Load(s.Path.Trim());
             s.Selected = null;
+            _highlightBone = null;
             return true;
         }
         catch (GlaLoadException e)
@@ -87,6 +88,7 @@ public partial class Game1
         s.Status = null;
         other.Status = null;
         s.Selected = a;
+        _highlightBone = null;
         other.Selected = other.Side?.Find(a.Name);
     }
 
