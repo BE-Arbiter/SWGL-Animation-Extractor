@@ -67,7 +67,7 @@ public static class XsiWriter
     {
         if (anim.Length < 1)
             throw new XsiExportException($"Animation '{anim.Name}' has no frames (length {anim.Length}).");
-        if (anim.Start + anim.Length > gla.NumFrames)
+        if (anim.Start < 0 || anim.Start + anim.Length > gla.NumFrames)
             throw new XsiExportException($"Animation frames exceed the GLA ({gla.NumFrames} frames).");
 
         int n = anim.Length;

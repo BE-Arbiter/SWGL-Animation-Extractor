@@ -57,10 +57,39 @@ public sealed class GlaFile
             int p = table + Int(table + 4 * i);
             Bones.Add(new GlaBone { Name = CStr(p, 64), Parent = Int(p + 68), BasePose = ReadBasePose(p + 72) });
         }
+        Validate(numBones);
         _order = ComputeParentFirstOrder();
         foreach (var b in Bones)
             for (var a = b; a != null; a = a.Parent >= 0 ? Bones[a.Parent] : null)
                 if (a.Name.Equals("face", StringComparison.OrdinalIgnoreCase)) { b.IsFace = true; break; }
+    }
+
+    private void Validate(int numBones)
+    {
+        if (NumFrames < 1) throw new InvalidDataException("The GLA has no frames.");
+        long len = _data.Length;
+        long tableEnd = _ofsFrames + (long)NumFrames * numBones * 3;
+        if (_ofsFrames < 0 || _ofsPool < 0 || tableEnd > len)
+            throw new InvalidDataException("The GLA frame index table is truncated.");
+
+        int maxIndex = -1;
+        for (long o = _ofsFrames; o < tableEnd; o += 3)
+            maxIndex = Math.Max(maxIndex, _data[o] | (_data[o + 1] << 8) | (_data[o + 2] << 16));
+        if (_ofsPool + (maxIndex + 1L) * 14 > len)
+            throw new InvalidDataException("The GLA compressed bone pool is truncated.");
+
+        for (int i = 0; i < Bones.Count; i++)
+            if (Bones[i].Parent < -1 || Bones[i].Parent >= Bones.Count)
+                throw new InvalidDataException($"Bone '{Bones[i].Name}' has an invalid parent index ({Bones[i].Parent}).");
+        for (int i = 0; i < Bones.Count; i++)
+        {
+            int p = Bones[i].Parent, steps = 0;
+            while (p >= 0)
+            {
+                if (++steps > Bones.Count) throw new InvalidDataException($"The bone hierarchy has a cycle (bone '{Bones[i].Name}').");
+                p = Bones[p].Parent;
+            }
+        }
     }
 
     private int[] ComputeParentFirstOrder()

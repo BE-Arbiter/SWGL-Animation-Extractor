@@ -61,7 +61,8 @@ public class XsiWriterTests
         int i = s.IndexOf("SI_FCurve " + fcurve + " {", StringComparison.Ordinal);
         Assert.True(i >= 0, fcurve);
         var block = s.Substring(i, s.IndexOf('}', i) - i);
-        return Regex.Matches(block, @"^	*\d+\.\d{6},(-?\d+\.\d{6}),?$", RegexOptions.Multiline)
+        return Regex.Matches(block, @"^	*\d+\.\d{6},(-?\d+\.\d{6}),
+?$", RegexOptions.Multiline)
             .Select(m => float.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).ToArray();
     }
 
@@ -163,6 +164,13 @@ public class XsiWriterTests
     public void Out_of_range_animation_throws()
     {
         var ex = Assert.Throws<XsiExportException>(() => Build(Three(), Def(8, 5)));
+        Assert.Equal("Animation frames exceed the GLA (10 frames).", ex.Message);
+    }
+
+    [Fact]
+    public void Negative_start_throws()
+    {
+        var ex = Assert.Throws<XsiExportException>(() => Build(Three(), Def(-1, 3)));
         Assert.Equal("Animation frames exceed the GLA (10 frames).", ex.Message);
     }
 

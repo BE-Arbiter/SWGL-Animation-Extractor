@@ -191,7 +191,7 @@ public partial class Game1
                         s.Status = $"Exported {System.IO.Path.GetFileName(p)}";
                         s.StatusIsError = false;
                     }
-                    catch (Exception e) when (e is XsiExportException or IOException or UnauthorizedAccessException)
+                    catch (Exception e)
                     {
                         s.Status = e.Message;
                         s.StatusIsError = true;

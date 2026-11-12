@@ -32,6 +32,10 @@ public static class AnimComparer
     {
         if (da.Length <= 0 || db.Length <= 0)
             throw new ArgumentException($"Animation '{(da.Length <= 0 ? da.Name : db.Name)}' has no frames.");
+        if (da.Start < 0 || da.Start + da.Length > a.NumFrames)
+            throw new ArgumentException($"Animation frames exceed the GLA ({a.NumFrames} frames).");
+        if (db.Start < 0 || db.Start + db.Length > b.NumFrames)
+            throw new ArgumentException($"Animation frames exceed the GLA ({b.NumFrames} frames).");
         int samples = Math.Max(da.Length, db.Length);
         var common = new List<(int ia, int ib)>();
         var onlyA = new List<string>();
@@ -43,6 +47,9 @@ public static class AnimComparer
         }
         for (int j = 0; j < b.Bones.Count; j++)
             if (a.FindBone(b.Bones[j].Name) < 0) onlyB.Add(b.Bones[j].Name);
+
+        if (common.Count == 0)
+            throw new ArgumentException("No bone in common between the two GLAs.");
 
         var maxAngle = new float[common.Count];
         var angleFrame = new int[common.Count];

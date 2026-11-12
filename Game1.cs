@@ -40,6 +40,7 @@ public partial class Game1 : Game
     {
         while (_uiActions.TryDequeue(out var a))
         {
+            _uiError = null; // a new UI action supersedes the previous failure
             try { a(); } catch (Exception e) { System.Diagnostics.Debug.WriteLine(e); _uiError = e.Message; }
         }
         base.Update(gameTime);

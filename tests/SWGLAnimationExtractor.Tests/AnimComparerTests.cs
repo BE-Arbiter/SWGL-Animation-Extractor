@@ -151,4 +151,39 @@ public class AnimComparerTests
         var g = Gla(0, 0);
         Assert.Throws<ArgumentException>(() => AnimComparer.Compare(g, new AnimDef("A", 0, 0, -1, 20f), g, Def(2)));
     }
+
+    private static GlaFile Named(string name, int frames = 3)
+    {
+        var f = new (Quaternion, Vector3)[frames, 1];
+        for (int i = 0; i < frames; i++) f[i, 0] = (Quaternion.Identity, Vector3.Zero);
+        return GlaFile.Parse(TestGla.Build(new[] { name }, new[] { -1 }, new[] { Matrix4x4.Identity }, f));
+    }
+
+    [Fact]
+    public void No_common_bone_throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => Cmp(Named("a"), Named("b")));
+        Assert.Equal("No bone in common between the two GLAs.", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(2, 2, 3, "Animation frames exceed the GLA (3 frames).")]  // overrun on the reference side
+    [InlineData(-1, 2, 3, "Animation frames exceed the GLA (3 frames).")] // negative start
+    public void Out_of_range_reference_animation_throws(int start, int len, int frames, string msg)
+    {
+        var g = Gla(0, 0, 0);
+        Assert.Equal(frames, g.NumFrames);
+        var ex = Assert.Throws<ArgumentException>(() => AnimComparer.Compare(g, new AnimDef("A", start, len, -1, 20f), g, Def(2)));
+        Assert.Equal(msg, ex.Message);
+    }
+
+    [Fact]
+    public void Out_of_range_compared_animation_throws()
+    {
+        var a = Gla(0, 0, 0, 0, 0);
+        var b = Gla(0, 0);
+        var ex = Assert.Throws<ArgumentException>(() => AnimComparer.Compare(a, Def(3), b, new AnimDef("A", 1, 2, -1, 20f)));
+        Assert.Equal("Animation frames exceed the GLA (2 frames).", ex.Message);
+        Assert.Throws<ArgumentException>(() => AnimComparer.Compare(a, Def(3), b, new AnimDef("A", -1, 1, -1, 20f)));
+    }
 }

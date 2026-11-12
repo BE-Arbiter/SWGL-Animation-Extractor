@@ -54,4 +54,48 @@ public class GlaFileTests
         Assert.Equal(-1, gla.FindBone("nope"));
         Assert.Equal(new[] { 0, 1 }, gla.ParentFirstOrder);
     }
+
+    private static byte[] Valid(int[]? parents = null)
+    {
+        parents ??= new[] { -1, 0 };
+        return TestGla.Build(new[] { "a", "b" }, parents, new[] { Matrix4x4.Identity, Matrix4x4.Identity },
+            new[,] { { Id, Id }, { Id, Id } });
+    }
+
+    [Fact]
+    public void Truncated_pool_is_rejected()
+    {
+        var d = Valid();
+        Assert.Throws<InvalidDataException>(() => GlaFile.Parse(d[..^10]));
+    }
+
+    [Fact]
+    public void Truncated_frame_index_table_is_rejected()
+    {
+        var d = Valid();
+        int ofsFrames = BitConverter.ToInt32(d, 80);
+        Assert.Throws<InvalidDataException>(() => GlaFile.Parse(d[..(ofsFrames + 5)]));
+    }
+
+    [Fact]
+    public void Zero_frames_is_rejected()
+    {
+        var d = Valid();
+        BitConverter.GetBytes(0).CopyTo(d, 76);
+        Assert.Throws<InvalidDataException>(() => GlaFile.Parse(d));
+    }
+
+    [Fact]
+    public void Parent_cycle_is_rejected() =>
+        Assert.Throws<InvalidDataException>(() => GlaFile.Parse(Valid(new[] { 1, 0 })));
+
+    [Fact]
+    public void Parent_out_of_range_is_rejected()
+    {
+        var d = Valid();
+        // Bone 1 entry: parent index at +68 of the entry whose offset is stored after the header.
+        int entry = 100 + BitConverter.ToInt32(d, 104);
+        BitConverter.GetBytes(7).CopyTo(d, entry + 68);
+        Assert.Throws<InvalidDataException>(() => GlaFile.Parse(d));
+    }
 }

@@ -163,8 +163,11 @@ public partial class Game1
         var a = _left.Selected!;
         var b = _right.Selected!;
 
+        if (_refViewer.GlmWarning != null) DrawWrapped(Red, "Reference: " + _refViewer.GlmWarning);
+        if (_cmpViewer.GlmWarning != null) DrawWrapped(Red, "Compared: " + _cmpViewer.GlmWarning);
         var avail = ImGui.GetContentRegionAvail();
-        int w = Math.Max((int)avail.X, 16), h = Math.Max((int)avail.Y, 16);
+        int warnings = (_refViewer.GlmWarning != null ? 1 : 0) + (_cmpViewer.GlmWarning != null ? 1 : 0);
+        int w = Math.Max((int)avail.X, 16), h = Math.Max((int)(avail.Y - warnings * ImGui.GetTextLineHeightWithSpacing()), 16);
         var glm = _showGlm ? _glm : null;
         FrameSource? fa = a.Length > 0 ? _playback.NormalizedFrame(a) : null;
         FrameSource? fb = b.Length > 0 ? _playback.NormalizedFrame(b) : null;
@@ -253,9 +256,9 @@ public partial class Game1
             }
             ImGui.PopID();
             ImGui.TableNextColumn(); ImGui.TextUnformatted(d.MaxAngleDeg.ToString("0.00"));
-            ImGui.TableNextColumn(); ImGui.TextUnformatted(d.AngleFrame.ToString());
+            ImGui.TableNextColumn(); ImGui.TextUnformatted((d.AngleFrame + 1).ToString());
             ImGui.TableNextColumn(); ImGui.TextUnformatted(d.MaxOffset.ToString("0.00"));
-            ImGui.TableNextColumn(); ImGui.TextUnformatted(d.OffsetFrame.ToString());
+            ImGui.TableNextColumn(); ImGui.TextUnformatted((d.OffsetFrame + 1).ToString());
         }
         ImGui.EndTable();
     }
