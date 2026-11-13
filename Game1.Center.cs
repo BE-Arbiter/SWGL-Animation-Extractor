@@ -7,9 +7,9 @@ namespace SWGLAnimationExtractor;
 
 public partial class Game1
 {
-    private const int TabReference = 0, TabDiffView = 1, TabDiff3D = 2, TabCompared = 3;
+    private const int TabReference = 0, TabDiffView = 1, TabDiffSideBySide = 2, TabDiff3D = 3, TabCompared = 4;
     private static readonly string[] CenterTabNames =
-        { "Reference Animation", "Differences (View)", "Differences (3D)", "Compared Animation" };
+        { "Reference Animation", "Differences (View)", "Differences (Side by Side)", "Differences (3D)", "Compared Animation" };
 
     private SkeletonViewer _refViewer = null!;
     private SkeletonViewer _cmpViewer = null!;
@@ -105,6 +105,8 @@ public partial class Game1
         }
         ImGui.SameLine();
         ImGui.TextDisabled(_glm != null && !string.IsNullOrEmpty(_settings.Glm) ? System.IO.Path.GetFileName(_settings.Glm) : "(no GLM)");
+        ImGui.SameLine();
+        if (ImGui.Button("Build GLA from XSI...")) OpenBuilder();
         if (_glmError != null) DrawWrapped(Red, _glmError);
 
         float footer = ImGui.GetFrameHeightWithSpacing() + ImGui.GetStyle().ItemSpacing.Y;
@@ -121,6 +123,7 @@ public partial class Game1
                         case TabReference: DrawAnimView(_refViewer, _left, SkeletonViewer.ReferenceColor); break;
                         case TabCompared: DrawAnimView(_cmpViewer, _right, SkeletonViewer.ComparedColor); break;
                         case TabDiffView: DrawDiffView(); break;
+                        case TabDiffSideBySide: DrawDiffSideBySide(); break;
                         case TabDiff3D: DrawDiff3D(); break;
                     }
                 }
@@ -203,10 +206,49 @@ public partial class Game1
 
         var refPos = new Vec2(pos.X + 8, pos.Y + 6);
         var cmpPos = new Vec2(pos.X + w - ImGui.CalcTextSize("Compared").X - 8, pos.Y + 6);
-        dl.AddText(refPos + new Vec2(1, 1), 0xFF000000, "Reference");
-        dl.AddText(refPos, 0xFFFFFFFF, "Reference");
-        dl.AddText(cmpPos + new Vec2(1, 1), 0xFF000000, "Compared");
-        dl.AddText(cmpPos, 0xFFFFFFFF, "Compared");
+        DrawLabel(dl, refPos, "Reference");
+        DrawLabel(dl, cmpPos, "Compared");
+    }
+
+    /// <summary>Reference and Compared next to each other, shared camera, synchronized in normalized time.</summary>
+    private void DrawDiffSideBySide()
+    {
+        if (!RequireBothSelected()) return;
+        var a = _left.Selected!;
+        var b = _right.Selected!;
+
+        if (_refViewer.GlmWarning != null) DrawWrapped(Red, "Reference: " + _refViewer.GlmWarning);
+        if (_cmpViewer.GlmWarning != null) DrawWrapped(Red, "Compared: " + _cmpViewer.GlmWarning);
+        var avail = ImGui.GetContentRegionAvail();
+        int warnings = (_refViewer.GlmWarning != null ? 1 : 0) + (_cmpViewer.GlmWarning != null ? 1 : 0);
+        const float gap = 4f;
+        int w = Math.Max((int)((avail.X - gap) / 2), 16);
+        int h = Math.Max((int)(avail.Y - warnings * ImGui.GetTextLineHeightWithSpacing()), 16);
+        var glm = _showGlm ? _glm : null;
+        FrameSource? fa = a.Length > 0 ? _playback.NormalizedFrame(a) : null;
+        FrameSource? fb = b.Length > 0 ? _playback.NormalizedFrame(b) : null;
+        var idA = _refViewer.Render(_camera, w, h, _left.Side!.Gla, fa, SkeletonViewer.ReferenceColor, HighlightIndex(_left.Side.Gla), glm);
+        var idB = _cmpViewer.Render(_camera, w, h, _right.Side!.Gla, fb, SkeletonViewer.ComparedColor, HighlightIndex(_right.Side.Gla), glm);
+
+        var posA = ImGui.GetCursorScreenPos();
+        ImGui.PushID("ref");
+        CameraInput.Image(idA, new Vec2(w, h), _camera);
+        ImGui.PopID();
+        ImGui.SameLine(0, gap);
+        var posB = ImGui.GetCursorScreenPos();
+        ImGui.PushID("cmp");
+        CameraInput.Image(idB, new Vec2(w, h), _camera);
+        ImGui.PopID();
+
+        var dl = ImGui.GetWindowDrawList();
+        DrawLabel(dl, posA + new Vec2(8, 6), "Reference");
+        DrawLabel(dl, posB + new Vec2(8, 6), "Compared");
+    }
+
+    private static void DrawLabel(ImDrawListPtr dl, Vec2 pos, string text)
+    {
+        dl.AddText(pos + new Vec2(1, 1), 0xFF000000, text);
+        dl.AddText(pos, 0xFFFFFFFF, text);
     }
 
     private static readonly Vec4 Orange = new(1.0f, 0.62f, 0.15f, 1f);
@@ -264,7 +306,7 @@ public partial class Game1
     }
 
     /// <summary>Frame index shown in the footer: matches what the active tab renders.</summary>
-    private int FooterFrame(AnimDef anim) => _centerTab is TabDiffView or TabDiff3D
+    private int FooterFrame(AnimDef anim) => _centerTab is TabDiffView or TabDiffSideBySide or TabDiff3D
         ? Math.Clamp((int)MathF.Round(_playback.NormalizedFrame(anim).Frame), 0, anim.Length - 1)
         : _playback.FrameIndex(anim);
 

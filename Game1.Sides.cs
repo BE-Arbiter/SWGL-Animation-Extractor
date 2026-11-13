@@ -23,7 +23,7 @@ public partial class Game1
 
     private static readonly Vec4 Red = new(0.95f, 0.3f, 0.3f, 1f);
     private static readonly Vec4 Green = new(0.35f, 0.85f, 0.35f, 1f);
-    private static readonly string[] TabNames = { "All Animations", "Common Animations", "Exclusive Animations" };
+    private static readonly string[] TabNames = { "All", "Common", "Exclusive", "Different" };
 
     private void InitSides()
     {
@@ -153,6 +153,7 @@ public partial class Game1
         {
             1 => AnimSets.Common(s.Side, other.Side),
             2 => AnimSets.Exclusive(s.Side, other.Side),
+            3 => AnimSets.Different(s.Side, other.Side, _comparison.Get),
             _ => s.Side.Anims,
         };
         bool both = other.Side != null;

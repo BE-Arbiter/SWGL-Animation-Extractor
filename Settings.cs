@@ -8,6 +8,9 @@ public sealed class Settings
     public string? RightGla { get; set; }
     public string? Glm { get; set; }
     public string? ExportDir { get; set; }
+    public string? BuildXsiDir { get; set; }
+    public string? BuildOutput { get; set; }
+    public string? BuildSkeleton { get; set; }
 
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SWGLAnimationExtractor", "settings.json");

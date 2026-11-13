@@ -35,7 +35,7 @@ public sealed class OrbitCamera
         var dir = Direction;
         var right = Vector3.Normalize(Vector3.Cross(-dir, Vector3.UnitZ));
         var up = Vector3.Cross(right, -dir);
-        float scale = Radius * 2.6f * ZoomFactor * 0.0016f;
+        float scale = Radius * HalfHeight * ZoomFactor * 0.0044f;
         PanOffset += (-right * delta.X + up * delta.Y) * scale;
     }
 
@@ -45,14 +45,20 @@ public sealed class OrbitCamera
     public Vector3 Direction =>
         new(MathF.Cos(Yaw) * MathF.Cos(Pitch), MathF.Sin(Yaw) * MathF.Cos(Pitch), MathF.Sin(Pitch));
 
+    // The eye stays far away with a narrow field of view: a limb reaching toward the camera is barely magnified
+    // (a close wide-angle camera made it look stretched). Zooming narrows the field of view instead of moving the eye.
+    private const float EyeDistance = 10f; // in Radius units
+    private const float HalfHeight = 0.95f; // visible half height at ZoomFactor 1, in Radius units
+
     public Matrix View()
     {
         var target = Center + PanOffset;
-        return Matrix.CreateLookAt(target + Direction * (Radius * 2.6f * ZoomFactor), target, Vector3.UnitZ);
+        return Matrix.CreateLookAt(target + Direction * (Radius * EyeDistance), target, Vector3.UnitZ);
     }
 
     public Matrix Projection(float aspect) =>
-        Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(40), aspect, Math.Max(Radius * 0.05f, 0.1f), Radius * 20f);
+        Matrix.CreatePerspectiveFieldOfView(2f * MathF.Atan(HalfHeight * ZoomFactor / EyeDistance), aspect,
+            Math.Max(Radius * 1f, 0.1f), Radius * 40f);
 }
 
 /// <summary>ImGui input for an <see cref="OrbitCamera"/>: drag = orbit, right drag = pan, wheel = zoom.</summary>

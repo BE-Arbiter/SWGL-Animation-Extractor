@@ -34,7 +34,7 @@ public static class FileDialogs
     private static extern bool GetSaveFileName(ref OpenFileName ofn);
 
     private const int OFN_FILEMUSTEXIST = 0x1000, OFN_PATHMUSTEXIST = 0x800, OFN_NOCHANGEDIR = 0x8,
-        OFN_OVERWRITEPROMPT = 0x2;
+        OFN_OVERWRITEPROMPT = 0x2, OFN_ALLOWMULTISELECT = 0x200, OFN_EXPLORER = 0x80000;
 
     /// <summary>Shows an Open dialog on a background thread; <paramref name="done"/> gets the chosen path or null.
     /// <paramref name="filter"/> is a display text such as "GLA files (*.gla)"; the pattern is taken from the parentheses.</summary>
@@ -45,6 +45,46 @@ public static class FileDialogs
     public static void Save(string filter, string title, string? initialDir, string defaultName, string defExt,
         Action<string?> done) =>
         Run(() => Show(true, filter, title, initialDir, defaultName, defExt), done);
+
+    /// <summary>Shows a multi-selection Open dialog; <paramref name="done"/> gets the chosen paths (empty when cancelled).</summary>
+    public static void OpenMany(string filter, string title, string? initialDir, Action<string[]> done) =>
+        Run(() => ShowMany(filter, title, initialDir), r => done(r == null ? Array.Empty<string>() : r.Split('|')));
+
+    private static string? ShowMany(string filter, string title, string? initialDir)
+    {
+        const int size = 65536;
+        var buffer = Marshal.AllocHGlobal(size * 2);
+        try
+        {
+            Marshal.WriteInt16(buffer, 0, 0);
+            var ofn = new OpenFileName
+            {
+                lStructSize = Marshal.SizeOf<OpenFileName>(),
+                lpstrFilter = BuildFilter(filter),
+                nFilterIndex = 1,
+                lpstrFile = buffer,
+                nMaxFile = size,
+                lpstrInitialDir = !string.IsNullOrWhiteSpace(initialDir) && Directory.Exists(initialDir) ? initialDir : null,
+                lpstrTitle = title,
+                Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER,
+            };
+            if (!GetOpenFileName(ref ofn)) return null;
+            // One file: its full path. Several: the folder, then each file name, separated by NULs, ending with two NULs.
+            var parts = new List<string>();
+            int o = 0;
+            while (true)
+            {
+                var str = Marshal.PtrToStringUni(buffer + o * 2) ?? "";
+                if (str.Length == 0) break;
+                parts.Add(str);
+                o += str.Length + 1;
+            }
+            if (parts.Count == 0) return null;
+            var paths = parts.Count == 1 ? parts : parts.Skip(1).Select(f => Path.Combine(parts[0], f)).ToList();
+            return string.Join("|", paths);
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+    }
 
     private static int _open;
 

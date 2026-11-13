@@ -8,6 +8,9 @@ public sealed class GlaBone
     public string Name = "";
     public int Parent = -1;
 
+    /// <summary>mdxaSkel_t flags (G2BONEFLAG_ALWAYSXFORM = 1).</summary>
+    public uint Flags;
+
     /// <summary>The face bone and the bones below it (eyes, brows, lips, jaw) are driven by their own animation.</summary>
     public bool IsFace;
 
@@ -30,6 +33,12 @@ public sealed class GlaFile
     private readonly int _ofsFrames, _ofsPool;
 
     public int NumFrames { get; }
+
+    /// <summary>Internal GLA name (header, e.g. "models/players/_humanoid/_humanoid").</summary>
+    public string Name { get; }
+
+    /// <summary>Scale the GLA was built with (0 for old files).</summary>
+    public float Scale { get; }
     public List<GlaBone> Bones { get; } = new();
 
     // Bone indexes with every parent before its children (a parent may have a higher index, e.g. "face").
@@ -45,6 +54,8 @@ public sealed class GlaFile
             throw new InvalidDataException("Not a GLA file.");
         if (Int(4) != 6) throw new InvalidDataException("Unsupported GLA version.");
 
+        Name = CStr(8, 64);
+        Scale = BitConverter.ToSingle(data, 72);
         NumFrames = Int(76);
         _ofsFrames = Int(80);
         int numBones = Int(84);
@@ -55,7 +66,7 @@ public sealed class GlaFile
         for (int i = 0; i < numBones; i++)
         {
             int p = table + Int(table + 4 * i);
-            Bones.Add(new GlaBone { Name = CStr(p, 64), Parent = Int(p + 68), BasePose = ReadBasePose(p + 72) });
+            Bones.Add(new GlaBone { Name = CStr(p, 64), Flags = (uint)Int(p + 64), Parent = Int(p + 68), BasePose = ReadBasePose(p + 72) });
         }
         Validate(numBones);
         _order = ComputeParentFirstOrder();

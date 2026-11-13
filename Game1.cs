@@ -77,5 +77,6 @@ public partial class Game1 : Game
         }
         if (_uiError != null) DrawWrapped(Red, _uiError);
         ImGui.End();
+        DrawBuilder();
     }
 }

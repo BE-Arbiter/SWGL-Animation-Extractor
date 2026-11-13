@@ -126,7 +126,7 @@ public class AnimComparerTests
 
     [Fact]
     public void Offset_below_tolerance_is_identical() =>
-        Assert.Equal(Classification.Identical, Cmp(GlaT(Vector3.Zero, Vector3.Zero), GlaT(new Vector3(0.02f, 0, 0), new Vector3(0.02f, 0, 0))).Class);
+        Assert.Equal(Classification.Identical, Cmp(GlaT(Vector3.Zero, Vector3.Zero), GlaT(new Vector3(0.06f, 0, 0), new Vector3(0.06f, 0, 0))).Class);
 
     [Fact]
     public void Bones_are_sorted_by_angle_descending_and_filtered()

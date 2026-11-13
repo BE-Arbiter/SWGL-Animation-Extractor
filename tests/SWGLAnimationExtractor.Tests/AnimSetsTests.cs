@@ -32,4 +32,18 @@ public class AnimSetsTests : IDisposable
         Assert.Empty(AnimSets.Common(l, null));
         Assert.Equal(new[] { "A", "B", "C" }, AnimSets.Exclusive(l, null).Select(a => a.Name));
     }
+
+    [Fact]
+    public void Different_keeps_exclusive_and_major_common_animations()
+    {
+        var l = Side("l", "A", "B", "C", "D", "E", "F");
+        var r = Side("r", "B", "C", "D", "E", "F", "G");
+        var cls = new Dictionary<string, Classification>
+        {
+            ["B"] = Classification.Identical, ["C"] = Classification.Minor, ["D"] = Classification.Major,
+            ["E"] = Classification.Pending, ["F"] = Classification.Failed,
+        };
+        Assert.Equal(new[] { "A", "D" }, AnimSets.Different(l, r, n => cls[n]).Select(a => a.Name));
+        Assert.Equal(new[] { "D", "G" }, AnimSets.Different(r, l, n => cls[n]).Select(a => a.Name));
+    }
 }
