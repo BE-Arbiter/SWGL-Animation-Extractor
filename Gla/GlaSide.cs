@@ -5,7 +5,7 @@ public sealed class GlaLoadException : Exception
     public GlaLoadException(string message, Exception? inner = null) : base(message, inner) { }
 }
 
-/// <summary>One side of the comparison: a GLA skeleton plus the animation.cfg next to it.</summary>
+/// <summary>One side of the comparison: a GLA skeleton plus the animation.cfg (or &lt;gla name&gt;.cfg) next to it.</summary>
 public sealed class GlaSide
 {
     private readonly Dictionary<string, AnimDef> _byName;
@@ -24,12 +24,23 @@ public sealed class GlaSide
 
     public AnimDef? Find(string name) => _byName.TryGetValue(name, out var a) ? a : null;
 
+    /// <summary>animation.cfg next to the GLA, else "&lt;gla name&gt;.cfg" next to it; null when neither exists.</summary>
+    public static string? FindCfg(string glaPath)
+    {
+        var full = Path.GetFullPath(glaPath);
+        var dir = Path.GetDirectoryName(full) ?? "";
+        var standard = Path.Combine(dir, "animation.cfg");
+        if (File.Exists(standard)) return standard;
+        var named = Path.Combine(dir, Path.GetFileNameWithoutExtension(full) + ".cfg");
+        return File.Exists(named) ? named : null;
+    }
+
     public static GlaSide Load(string glaPath)
     {
         try
         {
-            var cfgPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(glaPath)) ?? "", "animation.cfg");
-            if (!File.Exists(cfgPath)) throw new GlaLoadException("animation.cfg not found next to the GLA.");
+            var cfgPath = FindCfg(glaPath) ?? throw new GlaLoadException(
+                $"Neither animation.cfg nor {Path.GetFileNameWithoutExtension(glaPath)}.cfg found next to the GLA.");
             var gla = GlaFile.Parse(File.ReadAllBytes(glaPath));
             var seen = new HashSet<string>(StringComparer.Ordinal);
             var anims = AnimationCfg.Parse(File.ReadAllText(cfgPath)).Where(a => seen.Add(a.Name)).ToList();

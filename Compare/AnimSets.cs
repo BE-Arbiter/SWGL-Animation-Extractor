@@ -17,4 +17,15 @@ public static class AnimSets
     public static IReadOnlyList<AnimDef> Different(GlaSide side, GlaSide? other, Func<string, Classification> classify) =>
         other == null ? side.Anims.ToList() : side.Anims.Where(a => other.Find(a.Name) == null ||
             classify(a.Name) == Classification.Major).ToList();
+
+    /// <summary>
+    /// Animations of <paramref name="list"/> whose name contains every whitespace-separated term of
+    /// <paramref name="filter"/> (case-insensitive), in order. A blank filter keeps everything.
+    /// </summary>
+    public static IReadOnlyList<AnimDef> Filter(IReadOnlyList<AnimDef> list, string? filter)
+    {
+        var terms = (filter ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (terms.Length == 0) return list;
+        return list.Where(a => terms.All(t => a.Name.Contains(t, StringComparison.OrdinalIgnoreCase))).ToList();
+    }
 }

@@ -160,35 +160,54 @@ public partial class Game1
         return false;
     }
 
+    /// <summary>True when that side has a GLA and a selected animation.</summary>
+    private static bool HasAnim(SideState s) => s.Side != null && s.Selected != null;
+
+    /// <summary>Renders one side for the difference tabs, or returns IntPtr.Zero when it has no animation.</summary>
+    private IntPtr RenderDiffSide(SkeletonViewer viewer, SideState s, int w, int h, Microsoft.Xna.Framework.Color color)
+    {
+        if (!HasAnim(s)) return IntPtr.Zero;
+        var d = s.Selected!;
+        FrameSource? f = d.Length > 0 ? _playback.NormalizedFrame(d) : null;
+        return viewer.Render(_camera, w, h, s.Side!.Gla, f, color, HighlightIndex(s.Side.Gla), _showGlm ? _glm : null);
+    }
+
+    /// <summary>GLM warnings of the sides that are drawn; returns the space left for the images.</summary>
+    private Vec2 DrawDiffWarnings(bool a, bool b)
+    {
+        if (a && _refViewer.GlmWarning != null) DrawWrapped(Red, "Reference: " + _refViewer.GlmWarning);
+        if (b && _cmpViewer.GlmWarning != null) DrawWrapped(Red, "Compared: " + _cmpViewer.GlmWarning);
+        return ImGui.GetContentRegionAvail();
+    }
+
+    private static string MissingText(SideState s) => s.Side == null ? "(no GLA)" : "(no animation)";
+
     private void DrawDiffView()
     {
-        if (!RequireBothSelected()) return;
-        var a = _left.Selected!;
-        var b = _right.Selected!;
+        bool hasA = HasAnim(_left), hasB = HasAnim(_right);
+        if (!hasA && !hasB) { ImGui.TextUnformatted("No animation selected"); return; }
 
-        if (_refViewer.GlmWarning != null) DrawWrapped(Red, "Reference: " + _refViewer.GlmWarning);
-        if (_cmpViewer.GlmWarning != null) DrawWrapped(Red, "Compared: " + _cmpViewer.GlmWarning);
-        var avail = ImGui.GetContentRegionAvail();
-        int warnings = (_refViewer.GlmWarning != null ? 1 : 0) + (_cmpViewer.GlmWarning != null ? 1 : 0);
-        int w = Math.Max((int)avail.X, 16), h = Math.Max((int)(avail.Y - warnings * ImGui.GetTextLineHeightWithSpacing()), 16);
-        var glm = _showGlm ? _glm : null;
-        FrameSource? fa = a.Length > 0 ? _playback.NormalizedFrame(a) : null;
-        FrameSource? fb = b.Length > 0 ? _playback.NormalizedFrame(b) : null;
-        var idA = _refViewer.Render(_camera, w, h, _left.Side!.Gla, fa, SkeletonViewer.ReferenceColor, HighlightIndex(_left.Side.Gla), glm);
-        var idB = _cmpViewer.Render(_camera, w, h, _right.Side!.Gla, fb, SkeletonViewer.ComparedColor, HighlightIndex(_right.Side.Gla), glm);
+        var avail = DrawDiffWarnings(hasA, hasB);
+        int w = Math.Max((int)avail.X, 16), h = Math.Max((int)avail.Y, 16);
+        var idA = RenderDiffSide(_refViewer, _left, w, h, SkeletonViewer.ReferenceColor);
+        var idB = RenderDiffSide(_cmpViewer, _right, w, h, SkeletonViewer.ComparedColor);
+        // With only one side, the bar is pinned to the edge so that side fills the view and cannot be dragged.
+        bool pinned = !(hasA && hasB);
+        float split = pinned ? (hasA ? 1f : 0f) : Math.Clamp(_wipe, 0f, 1f);
 
         // One button over the whole image. A press within grab px of the bar drags the bar, any other press drives the camera.
         const float grab = 5f;
         var pos = ImGui.GetCursorScreenPos();
         ImGui.InvisibleButton("##viewport", new Vec2(w, h), ImGuiButtonFlags.MouseButtonLeft | ImGuiButtonFlags.MouseButtonRight);
         float mouseX = ImGui.GetIO().MousePos.X;
-        bool nearBar = Math.Abs(mouseX - (pos.X + Math.Clamp(_wipe, 0f, 1f) * w)) <= grab;
+        bool nearBar = !pinned && Math.Abs(mouseX - (pos.X + split * w)) <= grab;
         if (ImGui.IsItemActivated()) _draggingBar = ImGui.IsMouseDown(ImGuiMouseButton.Left) && nearBar;
-        if (!ImGui.IsItemActive()) _draggingBar = false;
+        if (!ImGui.IsItemActive() || pinned) _draggingBar = false;
 
         if (_draggingBar)
         {
             _wipe = Math.Clamp((mouseX - pos.X) / w, 0f, 1f);
+            split = _wipe;
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEW);
         }
         else
@@ -198,51 +217,55 @@ public partial class Game1
         }
 
         var dl = ImGui.GetWindowDrawList();
-        float split = Math.Clamp(_wipe, 0f, 1f);
         float x = pos.X + split * w;
-        if (split > 0f) dl.AddImage(idA, pos, new Vec2(x, pos.Y + h), new Vec2(0, 0), new Vec2(split, 1));
-        if (split < 1f) dl.AddImage(idB, new Vec2(x, pos.Y), new Vec2(pos.X + w, pos.Y + h), new Vec2(split, 0), new Vec2(1, 1));
+        if (split > 0f && idA != IntPtr.Zero) dl.AddImage(idA, pos, new Vec2(x, pos.Y + h), new Vec2(0, 0), new Vec2(split, 1));
+        if (split < 1f && idB != IntPtr.Zero) dl.AddImage(idB, new Vec2(x, pos.Y), new Vec2(pos.X + w, pos.Y + h), new Vec2(split, 0), new Vec2(1, 1));
         dl.AddRectFilled(new Vec2(x - 1.5f, pos.Y), new Vec2(x + 1.5f, pos.Y + h), 0xFFFFFFFF);
 
-        var refPos = new Vec2(pos.X + 8, pos.Y + 6);
-        var cmpPos = new Vec2(pos.X + w - ImGui.CalcTextSize("Compared").X - 8, pos.Y + 6);
-        DrawLabel(dl, refPos, "Reference");
-        DrawLabel(dl, cmpPos, "Compared");
+        string refText = hasA ? "Reference" : "Reference " + MissingText(_left);
+        string cmpText = hasB ? "Compared" : "Compared " + MissingText(_right);
+        DrawLabel(dl, new Vec2(pos.X + 8, pos.Y + 6), refText);
+        DrawLabel(dl, new Vec2(pos.X + w - ImGui.CalcTextSize(cmpText).X - 8, pos.Y + 6), cmpText);
     }
 
-    /// <summary>Reference and Compared next to each other, shared camera, synchronized in normalized time.</summary>
+    /// <summary>Reference and Compared next to each other, shared camera, synchronized in normalized time.
+    /// A side without an animation is left empty.</summary>
     private void DrawDiffSideBySide()
     {
-        if (!RequireBothSelected()) return;
-        var a = _left.Selected!;
-        var b = _right.Selected!;
+        bool hasA = HasAnim(_left), hasB = HasAnim(_right);
+        if (!hasA && !hasB) { ImGui.TextUnformatted("No animation selected"); return; }
 
-        if (_refViewer.GlmWarning != null) DrawWrapped(Red, "Reference: " + _refViewer.GlmWarning);
-        if (_cmpViewer.GlmWarning != null) DrawWrapped(Red, "Compared: " + _cmpViewer.GlmWarning);
-        var avail = ImGui.GetContentRegionAvail();
-        int warnings = (_refViewer.GlmWarning != null ? 1 : 0) + (_cmpViewer.GlmWarning != null ? 1 : 0);
+        var avail = DrawDiffWarnings(hasA, hasB);
         const float gap = 4f;
         int w = Math.Max((int)((avail.X - gap) / 2), 16);
-        int h = Math.Max((int)(avail.Y - warnings * ImGui.GetTextLineHeightWithSpacing()), 16);
-        var glm = _showGlm ? _glm : null;
-        FrameSource? fa = a.Length > 0 ? _playback.NormalizedFrame(a) : null;
-        FrameSource? fb = b.Length > 0 ? _playback.NormalizedFrame(b) : null;
-        var idA = _refViewer.Render(_camera, w, h, _left.Side!.Gla, fa, SkeletonViewer.ReferenceColor, HighlightIndex(_left.Side.Gla), glm);
-        var idB = _cmpViewer.Render(_camera, w, h, _right.Side!.Gla, fb, SkeletonViewer.ComparedColor, HighlightIndex(_right.Side.Gla), glm);
+        int h = Math.Max((int)avail.Y, 16);
+        var idA = RenderDiffSide(_refViewer, _left, w, h, SkeletonViewer.ReferenceColor);
+        var idB = RenderDiffSide(_cmpViewer, _right, w, h, SkeletonViewer.ComparedColor);
 
         var posA = ImGui.GetCursorScreenPos();
-        ImGui.PushID("ref");
-        CameraInput.Image(idA, new Vec2(w, h), _camera);
-        ImGui.PopID();
+        DiffHalf("ref", idA, w, h);
         ImGui.SameLine(0, gap);
         var posB = ImGui.GetCursorScreenPos();
-        ImGui.PushID("cmp");
-        CameraInput.Image(idB, new Vec2(w, h), _camera);
-        ImGui.PopID();
+        DiffHalf("cmp", idB, w, h);
 
         var dl = ImGui.GetWindowDrawList();
-        DrawLabel(dl, posA + new Vec2(8, 6), "Reference");
-        DrawLabel(dl, posB + new Vec2(8, 6), "Compared");
+        DrawLabel(dl, posA + new Vec2(8, 6), hasA ? "Reference" : "Reference " + MissingText(_left));
+        DrawLabel(dl, posB + new Vec2(8, 6), hasB ? "Compared" : "Compared " + MissingText(_right));
+    }
+
+    /// <summary>One half of the side-by-side view: the image, or an empty frame that still drives the camera.</summary>
+    private void DiffHalf(string id, IntPtr texture, int w, int h)
+    {
+        ImGui.PushID(id);
+        if (texture != IntPtr.Zero) CameraInput.Image(texture, new Vec2(w, h), _camera);
+        else
+        {
+            var pos = ImGui.GetCursorScreenPos();
+            ImGui.InvisibleButton("##viewport", new Vec2(w, h), ImGuiButtonFlags.MouseButtonLeft | ImGuiButtonFlags.MouseButtonRight);
+            CameraInput.Handle(_camera);
+            ImGui.GetWindowDrawList().AddRect(pos, pos + new Vec2(w, h), 0x40FFFFFF);
+        }
+        ImGui.PopID();
     }
 
     private static void DrawLabel(ImDrawListPtr dl, Vec2 pos, string text)

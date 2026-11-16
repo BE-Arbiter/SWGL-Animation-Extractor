@@ -8,10 +8,18 @@ public class PlaybackTests
     [Fact]
     public void Update_advances_and_wraps()
     {
-        var p = new Playback();
+        var p = new Playback { Speed = 1f };
         p.Update(1.5, 2f);
         p.Update(1.5, 2f);
         Assert.Equal(0.5f, p.Time01, 3);
+    }
+
+    [Fact]
+    public void Default_speed_is_half()
+    {
+        var p = new Playback();
+        p.Update(1.0, 2f);
+        Assert.Equal(0.25f, p.Time01, 3);
     }
 
     [Fact]

@@ -34,7 +34,24 @@ public class GlaSideTests : IDisposable
     public void Load_without_cfg_throws()
     {
         var e = Assert.Throws<GlaLoadException>(() => GlaSide.Load(WriteGla(null)));
-        Assert.Equal("animation.cfg not found next to the GLA.", e.Message);
+        Assert.Equal("Neither animation.cfg nor test.cfg found next to the GLA.", e.Message);
+    }
+
+    [Fact]
+    public void Load_falls_back_to_cfg_named_after_the_gla()
+    {
+        var path = WriteGla(null);
+        File.WriteAllText(Path.Combine(_dir, "test.cfg"), "BOTH_WALK1 0 4 -1 20\n");
+        var side = GlaSide.Load(path);
+        Assert.Equal(new[] { "BOTH_WALK1" }, side.Anims.Select(a => a.Name));
+    }
+
+    [Fact]
+    public void Load_prefers_animation_cfg_over_named_cfg()
+    {
+        var path = WriteGla("BOTH_STAND1 0 1 -1 20\n");
+        File.WriteAllText(Path.Combine(_dir, "test.cfg"), "BOTH_WALK1 0 1 -1 20\n");
+        Assert.Equal(new[] { "BOTH_STAND1" }, GlaSide.Load(path).Anims.Select(a => a.Name));
     }
 
     [Fact]

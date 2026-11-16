@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace SWGLAnimationExtractor;
 
-/// <summary>Native Windows open/save file dialogs (comdlg32), each run on its own STA thread.</summary>
+/// <summary>Native Windows open/save file dialogs (comdlg32) and folder picker, each run on its own STA thread.</summary>
 public static class FileDialogs
 {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -84,6 +84,72 @@ public static class FileDialogs
             return string.Join("|", paths);
         }
         finally { Marshal.FreeHGlobal(buffer); }
+    }
+
+    /// <summary>Shows a folder picker on a background thread; <paramref name="done"/> gets the chosen folder or null.</summary>
+    public static void PickFolder(string title, string? initialDir, Action<string?> done) =>
+        Run(() => ShowFolder(title, initialDir), done);
+
+    private const uint FOS_PICKFOLDERS = 0x20, FOS_FORCEFILESYSTEM = 0x40, FOS_NOCHANGEDIR = 0x8, SIGDN_FILESYSPATH = 0x80058000;
+
+    [ComImport, Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")]
+    private class FileOpenDialogCoClass { }
+
+    [ComImport, Guid("42f85136-db7e-439c-85f1-e4075d135fc8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IFileDialog
+    {
+        [PreserveSig] int Show(IntPtr parent);
+        void SetFileTypes(uint c, IntPtr specs);
+        void SetFileTypeIndex(uint i);
+        void GetFileTypeIndex(out uint i);
+        void Advise(IntPtr sink, out uint cookie);
+        void Unadvise(uint cookie);
+        void SetOptions(uint fos);
+        void GetOptions(out uint fos);
+        void SetDefaultFolder(IShellItem item);
+        void SetFolder(IShellItem item);
+        void GetFolder(out IShellItem item);
+        void GetCurrentSelection(out IShellItem item);
+        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name);
+        void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string text);
+        void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+        void GetResult(out IShellItem item);
+    }
+
+    [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItem
+    {
+        void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+        void GetParent(out IShellItem item);
+        void GetDisplayName(uint sigdn, out IntPtr name);
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+    private static extern void SHCreateItemFromParsingName(string path, IntPtr pbc, ref Guid riid, out IShellItem item);
+
+    private static string? ShowFolder(string title, string? initialDir)
+    {
+        var dlg = (IFileDialog)new FileOpenDialogCoClass();
+        try
+        {
+            dlg.GetOptions(out var fos);
+            dlg.SetOptions(fos | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR);
+            dlg.SetTitle(title);
+            if (!string.IsNullOrWhiteSpace(initialDir) && Directory.Exists(initialDir))
+            {
+                var iid = typeof(IShellItem).GUID;
+                SHCreateItemFromParsingName(initialDir, IntPtr.Zero, ref iid, out var folder);
+                dlg.SetFolder(folder);
+            }
+            if (dlg.Show(IntPtr.Zero) != 0) return null;
+            dlg.GetResult(out var item);
+            item.GetDisplayName(SIGDN_FILESYSPATH, out var ptr);
+            try { return Marshal.PtrToStringUni(ptr); }
+            finally { Marshal.FreeCoTaskMem(ptr); }
+        }
+        finally { Marshal.ReleaseComObject(dlg); }
     }
 
     private static int _open;

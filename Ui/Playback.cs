@@ -5,7 +5,7 @@ public sealed class Playback
 {
     public float Time01;
     public bool Playing = true;
-    public float Speed = 1f;
+    public float Speed = 0.5f;
 
     /// <summary>Advances by <paramref name="dtSeconds"/> of an animation lasting <paramref name="durationSeconds"/>; loops over [0,1).</summary>
     public void Update(double dtSeconds, float durationSeconds)

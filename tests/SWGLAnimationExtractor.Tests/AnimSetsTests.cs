@@ -34,6 +34,16 @@ public class AnimSetsTests : IDisposable
     }
 
     [Fact]
+    public void Filter_matches_every_term_case_insensitively()
+    {
+        var l = Side("l", "BOTH_RUN1", "BOTH_WALK1", "TORSO_RUN2", "BOTH_STAND1");
+        Assert.Equal(new[] { "BOTH_RUN1", "TORSO_RUN2" }, AnimSets.Filter(l.Anims, "run").Select(a => a.Name));
+        Assert.Equal(new[] { "BOTH_RUN1" }, AnimSets.Filter(l.Anims, " both  RUN ").Select(a => a.Name));
+        Assert.Equal(4, AnimSets.Filter(l.Anims, "  ").Count);
+        Assert.Empty(AnimSets.Filter(l.Anims, "jump"));
+    }
+
+    [Fact]
     public void Different_keeps_exclusive_and_major_common_animations()
     {
         var l = Side("l", "A", "B", "C", "D", "E", "F");

@@ -13,6 +13,9 @@ public sealed class SideState
     public bool StatusIsError;
     public AnimDef? Selected;
     public int Tab;
+    public string Filter = "";
+    public readonly AnimSelection Multi = new();
+    public PendingExport? Pending;
 }
 
 public partial class Game1
@@ -48,6 +51,7 @@ public partial class Game1
         {
             s.Side = GlaSide.Load(s.Path.Trim());
             s.Selected = null;
+            s.Multi.Clear();
             _highlightBone = null;
             return true;
         }
@@ -90,6 +94,7 @@ public partial class Game1
         s.Selected = a;
         _highlightBone = null;
         other.Selected = other.Side?.Find(a.Name);
+        other.Multi.SetSingle(other.Selected?.Name);
     }
 
     private static Vec4? ColorFor(Classification c) => c switch
@@ -127,6 +132,15 @@ public partial class Game1
         }
         if (s.Error != null) DrawWrapped(Red, s.Error);
 
+        bool hasFilter = s.Filter.Length > 0;
+        ImGui.SetNextItemWidth(hasFilter ? ImGui.GetContentRegionAvail().X - btn - ImGui.GetStyle().ItemSpacing.X : -1);
+        ImGui.InputTextWithHint("##filter", "Filter animations (e.g. run both)", ref s.Filter, 256);
+        if (hasFilter)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Clear", new Vec2(btn, 0))) s.Filter = "";
+        }
+
         if (ImGui.BeginTabBar("tabs"))
         {
             for (int i = 0; i < TabNames.Length; i++)
@@ -156,16 +170,23 @@ public partial class Game1
             3 => AnimSets.Different(s.Side, other.Side, _comparison.Get),
             _ => s.Side.Anims,
         };
+        list = AnimSets.Filter(list, s.Filter);
         bool both = other.Side != null;
-        foreach (var a in list)
+        for (int i = 0; i < list.Count; i++)
         {
+            var a = list[i];
             var c = Classification.Pending;
             if (both)
                 c = other.Side!.Find(a.Name) == null ? Classification.Exclusive : _comparison.Get(a.Name);
             var color = ColorFor(c);
             if (color != null) ImGui.PushStyleColor(ImGuiCol.Text, color.Value);
-            bool sel = s.Selected != null && s.Selected.Name == a.Name;
-            if (ImGui.Selectable($"{a.Name} ({a.Length})", sel)) Select(s, a);
+            bool sel = s.Multi.Contains(a.Name);
+            if (ImGui.Selectable($"{a.Name} ({a.Length})", sel))
+            {
+                var io = ImGui.GetIO();
+                s.Multi.Click(list, i, io.KeyCtrl, io.KeyShift);
+                Select(s, a);
+            }
             if (color != null) ImGui.PopStyleColor();
             if (c == Classification.Failed && ImGui.IsItemHovered())
                 ImGui.SetTooltip(_comparison.Error(a.Name) ?? "Comparison failed");
@@ -174,33 +195,99 @@ public partial class Game1
 
     private void DrawExport(SideState s)
     {
-        ImGui.BeginDisabled(s.Selected == null || s.Side == null);
-        if (ImGui.Button("Export XSI..."))
+        var chosen = s.Side == null ? new List<AnimDef>() : s.Multi.Of(s.Side.Anims);
+        if (chosen.Count <= 1)
         {
-            var gla = s.Side!.Gla;
-            var anim = s.Selected!;
-            FileDialogs.Save("dotXSI files (*.xsi)", "Export XSI", _settings.ExportDir, anim.Name + ".xsi", "xsi", p =>
-            {
-                if (p == null) return;
-                RunOnUi(() =>
-                {
-                    try
-                    {
-                        XsiWriter.Write(p, gla, anim);
-                        _settings.ExportDir = System.IO.Path.GetDirectoryName(p);
-                        _settings.Save();
-                        s.Status = $"Exported {System.IO.Path.GetFileName(p)}";
-                        s.StatusIsError = false;
-                    }
-                    catch (Exception e)
-                    {
-                        s.Status = e.Message;
-                        s.StatusIsError = true;
-                    }
-                });
-            });
+            ImGui.BeginDisabled(s.Selected == null || s.Side == null);
+            if (ImGui.Button("Export XSI...")) ExportOne(s, s.Side!.Gla, chosen.Count == 1 ? chosen[0] : s.Selected!);
+            ImGui.EndDisabled();
         }
-        ImGui.EndDisabled();
+        else if (ImGui.Button($"Export {chosen.Count} XSI...")) ExportMany(s, s.Side!.Gla, chosen);
+        DrawOverwritePopup(s);
         if (s.Status != null) DrawWrapped(s.StatusIsError ? Red : Green, s.Status);
     }
+
+    private void ExportOne(SideState s, GlaFile gla, AnimDef anim)
+    {
+        FileDialogs.Save("dotXSI files (*.xsi)", "Export XSI", _settings.ExportDir, anim.Name + ".xsi", "xsi", p =>
+        {
+            if (p == null) return;
+            RunOnUi(() =>
+            {
+                try
+                {
+                    XsiWriter.Write(p, gla, anim);
+                    _settings.ExportDir = System.IO.Path.GetDirectoryName(p);
+                    _settings.Save();
+                    s.Status = $"Exported {System.IO.Path.GetFileName(p)}";
+                    s.StatusIsError = false;
+                }
+                catch (Exception e)
+                {
+                    s.Status = e.Message;
+                    s.StatusIsError = true;
+                }
+            });
+        });
+    }
+
+    private void ExportMany(SideState s, GlaFile gla, List<AnimDef> anims)
+    {
+        FileDialogs.PickFolder($"Export {anims.Count} animations to folder", _settings.ExportDir, dir =>
+        {
+            if (dir == null) return;
+            RunOnUi(() =>
+            {
+                var batch = new PendingExport(dir, gla, anims);
+                int existing = anims.Count(a => File.Exists(batch.PathOf(a)));
+                if (existing == 0) WriteBatch(s, batch);
+                else { batch.Existing = existing; s.Pending = batch; }
+            });
+        });
+    }
+
+    private void DrawOverwritePopup(SideState s)
+    {
+        if (s.Pending == null) return;
+        if (!ImGui.IsPopupOpen("Overwrite?")) ImGui.OpenPopup("Overwrite?");
+        bool open = true;
+        if (!ImGui.BeginPopupModal("Overwrite?", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            if (!open) s.Pending = null; // closed with the title-bar X
+            return;
+        }
+        var b = s.Pending;
+        ImGui.TextUnformatted($"{b.Existing} of {b.Anims.Count} files already exist in\n{b.Dir}\nOverwrite them?");
+        if (ImGui.Button("Overwrite", new Vec2(100, 0))) { s.Pending = null; ImGui.CloseCurrentPopup(); WriteBatch(s, b); }
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel", new Vec2(100, 0))) { s.Pending = null; ImGui.CloseCurrentPopup(); }
+        ImGui.EndPopup();
+    }
+
+    private void WriteBatch(SideState s, PendingExport b)
+    {
+        var failed = new List<string>();
+        foreach (var a in b.Anims)
+        {
+            try { XsiWriter.Write(b.PathOf(a), b.Gla, a); }
+            catch (Exception e) { failed.Add($"{a.Name}: {e.Message}"); }
+        }
+        _settings.ExportDir = b.Dir;
+        _settings.Save();
+        int ok = b.Anims.Count - failed.Count;
+        s.StatusIsError = failed.Count > 0;
+        s.Status = failed.Count == 0
+            ? $"Exported {ok} animations to {b.Dir}"
+            : $"Exported {ok} of {b.Anims.Count}; failed:\n" + string.Join("\n", failed);
+    }
+}
+
+public sealed class PendingExport
+{
+    public PendingExport(string dir, GlaFile gla, List<AnimDef> anims) { Dir = dir; Gla = gla; Anims = anims; }
+    public string Dir { get; }
+    public GlaFile Gla { get; }
+    public List<AnimDef> Anims { get; }
+    public int Existing;
+    public string PathOf(AnimDef a) => System.IO.Path.Combine(Dir, a.Name + ".xsi");
 }

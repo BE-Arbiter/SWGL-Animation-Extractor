@@ -3,7 +3,7 @@ using Vec2 = System.Numerics.Vector2;
 
 namespace SWGLAnimationExtractor;
 
-/// <summary>"Build GLA" window: an ordered list of .xsi files turned into a .gla and its animation.cfg.</summary>
+/// <summary>"Build GLA" window: an ordered list of .xsi files turned into a .gla and its animation.cfg (or &lt;name&gt;.cfg).</summary>
 public partial class Game1
 {
     private sealed class BuildItem
@@ -271,12 +271,27 @@ public partial class Game1
                 if (r != null) RunOnUi(() => _buildOutput = r);
             });
         }
-        string cfg = string.IsNullOrWhiteSpace(_buildOutput) ? "" :
-            System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_buildOutput.Trim())) ?? "", "animation.cfg");
-        if (cfg.Length > 0)
+        string outName = string.IsNullOrWhiteSpace(_buildOutput) ? "<name>"
+            : System.IO.Path.GetFileNameWithoutExtension(_buildOutput.Trim());
+        ImGui.TextUnformatted("Animation cfg");
+        ImGui.SameLine();
+        bool named = _settings.BuildCfgNamed;
+        if (ImGui.RadioButton("animation.cfg", !named)) { _settings.BuildCfgNamed = false; _settings.Save(); }
+        ImGui.SameLine();
+        if (ImGui.RadioButton($"{outName}.cfg###cfgNamed", named)) { _settings.BuildCfgNamed = true; _settings.Save(); }
+
+        string cfg = "";
+        if (!string.IsNullOrWhiteSpace(_buildOutput))
+        {
+            string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_buildOutput.Trim())) ?? "";
+            string cfgName = _settings.BuildCfgNamed ? outName + ".cfg" : "animation.cfg";
+            cfg = System.IO.Path.Combine(dir, cfgName);
             ImGui.TextDisabled(File.Exists(cfg)
-                ? "animation.cfg is written next to the GLA (the existing one is saved as animation.cfg.bak)."
-                : "animation.cfg is written next to the GLA.");
+                ? $"{cfgName} is written next to the GLA (the existing one is saved as {cfgName}.bak)."
+                : $"{cfgName} is written next to the GLA.");
+            if (_settings.BuildCfgNamed && File.Exists(System.IO.Path.Combine(dir, "animation.cfg")))
+                DrawWrapped(Orange, "This folder has an animation.cfg: it takes priority when the GLA is loaded here.");
+        }
 
         string? why = _building ? "Building..."
             : _buildItems.Count == 0 ? "Add XSI files."
@@ -286,7 +301,7 @@ public partial class Game1
             : _buildUseTemplate && _buildTemplate == null ? "Choose a template GLA."
             : null;
         ImGui.BeginDisabled(why != null);
-        if (ImGui.Button("Build GLA + animation.cfg")) StartBuild(cfg);
+        if (ImGui.Button($"Build GLA + {(cfg.Length > 0 ? System.IO.Path.GetFileName(cfg) : "cfg")}###build")) StartBuild(cfg);
         ImGui.EndDisabled();
         if (why != null) { ImGui.SameLine(); ImGui.TextDisabled(why); }
         if (_buildDone != null && !_building)
