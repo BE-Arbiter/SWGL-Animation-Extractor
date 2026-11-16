@@ -10,6 +10,8 @@ public partial class Game1
     private const int TabReference = 0, TabDiffView = 1, TabDiffSideBySide = 2, TabDiff3D = 3, TabCompared = 4;
     private static readonly string[] CenterTabNames =
         { "Reference Animation", "Differences (View)", "Differences (Side by Side)", "Differences (3D)", "Compared Animation" };
+    /// <summary>The per-bone table tab is hidden: its numbers were misleading. The code stays for a later rework.</summary>
+    private const bool ShowDiffTable = false;
 
     private SkeletonViewer _refViewer = null!;
     private SkeletonViewer _cmpViewer = null!;
@@ -114,6 +116,7 @@ public partial class Game1
         {
             for (int i = 0; i < CenterTabNames.Length; i++)
             {
+                if (i == TabDiff3D && !ShowDiffTable) continue;
                 if (!ImGui.BeginTabItem(CenterTabNames[i])) continue;
                 _centerTab = i;
                 if (ImGui.BeginChild("view", new Vec2(0, -footer)))
@@ -199,8 +202,10 @@ public partial class Game1
         const float grab = 5f;
         var pos = ImGui.GetCursorScreenPos();
         ImGui.InvisibleButton("##viewport", new Vec2(w, h), ImGuiButtonFlags.MouseButtonLeft | ImGuiButtonFlags.MouseButtonRight);
-        float mouseX = ImGui.GetIO().MousePos.X;
-        bool nearBar = !pinned && Math.Abs(mouseX - (pos.X + split * w)) <= grab;
+        var mouse = ImGui.GetIO().MousePos;
+        float mouseX = mouse.X;
+        var handle = new Vec2(pos.X + split * w, pos.Y + h * 0.5f);
+        bool nearBar = !pinned && (Math.Abs(mouseX - handle.X) <= grab || Vec2.Distance(mouse, handle) <= WipeHandleRadius);
         if (ImGui.IsItemActivated()) _draggingBar = ImGui.IsMouseDown(ImGuiMouseButton.Left) && nearBar;
         if (!ImGui.IsItemActive() || pinned) _draggingBar = false;
 
@@ -221,6 +226,7 @@ public partial class Game1
         if (split > 0f && idA != IntPtr.Zero) dl.AddImage(idA, pos, new Vec2(x, pos.Y + h), new Vec2(0, 0), new Vec2(split, 1));
         if (split < 1f && idB != IntPtr.Zero) dl.AddImage(idB, new Vec2(x, pos.Y), new Vec2(pos.X + w, pos.Y + h), new Vec2(split, 0), new Vec2(1, 1));
         dl.AddRectFilled(new Vec2(x - 1.5f, pos.Y), new Vec2(x + 1.5f, pos.Y + h), 0xFFFFFFFF);
+        if (!pinned) DrawWipeHandle(dl, new Vec2(x, pos.Y + h * 0.5f));
 
         string refText = hasA ? "Reference" : "Reference " + MissingText(_left);
         string cmpText = hasB ? "Compared" : "Compared " + MissingText(_right);
@@ -266,6 +272,20 @@ public partial class Game1
             ImGui.GetWindowDrawList().AddRect(pos, pos + new Vec2(w, h), 0x40FFFFFF);
         }
         ImGui.PopID();
+    }
+
+    private const float WipeHandleRadius = 13f;
+
+    /// <summary>Round "&lt;-&gt;" grip drawn in the middle of the wipe bar.</summary>
+    private static void DrawWipeHandle(ImDrawListPtr dl, Vec2 c)
+    {
+        const uint fill = 0xFFFFFFFF, ink = 0xFF202020;
+        dl.AddCircleFilled(c, WipeHandleRadius, fill, 24);
+        dl.AddCircle(c, WipeHandleRadius, 0x80000000, 24, 1f);
+        const float half = 7f, head = 4f;
+        dl.AddLine(new Vec2(c.X - half + 1, c.Y), new Vec2(c.X + half - 1, c.Y), ink, 2f);
+        dl.AddTriangleFilled(new Vec2(c.X - half - 1, c.Y), new Vec2(c.X - half + head, c.Y - head), new Vec2(c.X - half + head, c.Y + head), ink);
+        dl.AddTriangleFilled(new Vec2(c.X + half + 1, c.Y), new Vec2(c.X + half - head, c.Y + head), new Vec2(c.X + half - head, c.Y - head), ink);
     }
 
     private static void DrawLabel(ImDrawListPtr dl, Vec2 pos, string text)
